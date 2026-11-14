@@ -1,0 +1,25 @@
+# mpac 自动预约配置（界面里「每周自动预约」保存时会重写本文件）。
+# 手动改了这里之后，需要再运行一次：uv run python scheduler.py install
+
+# 网站每天几点放出新的一天（可预约「今天 + days_ahead」那天）
+open_at = "00:10"
+# 提前几分钟开始准备（连 VPN、登录、打开预约页）
+prepare_minutes = 5
+# 开放前几分钟就开始每隔几秒刷新（开放时间不确定时留余量），新的一天一出现立刻提交
+poll_before_minutes = 2
+days_ahead = 13
+
+# 仪器编号：扫描电子显微镜 = 203（上机预约页面网址里的 pid）
+instrument_pid = 203
+
+# 每周想约的时段，按优先级排列。weekday：1=周一 … 7=周日。
+# 程序只在第一条开放的那天运行，依次尝试同一周里的这几天，约到一个就停。
+rules = [
+  { weekday = 5, slot = "13:00-17:30" },
+  { weekday = 4, slot = "15:00-17:00" },
+  { weekday = 3, slot = "14:00-17:00" },
+]
+
+# 刷新间隔（秒）；开放时间之后最多再等几分钟
+wait_retry_seconds = 3
+wait_max_minutes = 5

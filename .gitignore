@@ -1,0 +1,7 @@
+profile/
+.venv/
+logs/
+/mpac预约.app/
+.DS_Store
+__pycache__/
+assets/AppIcon.iconset/
