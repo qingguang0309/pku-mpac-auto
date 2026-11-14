@@ -108,7 +108,8 @@ def run_schedule(cfg: dict) -> tuple[int, int, int]:
 
 
 def save_config(cfg: dict) -> None:
-    rules = "\n".join(f'  {{ weekday = {int(r["weekday"])}, slot = "{r["slot"]}" }},' for r in cfg["rules"])
+    rules = "\n".join(f'  {{ weekday = {int(r["weekday"])}, slot = "{r["slot"]}"'
+                      + (", partial = true" if r.get("partial") else "") + " }," for r in cfg["rules"])
     CONFIG.write_text(f'''# mpac 自动预约配置（界面里「每周自动预约」保存时会重写本文件）。
 # 手动改了这里之后，需要再运行一次：uv run python scheduler.py install
 
@@ -125,6 +126,7 @@ instrument_pid = {int(cfg["instrument_pid"])}
 
 # 每周想约的时段，按优先级排列。weekday：1=周一 … 7=周日。
 # 程序只在第一条开放的那天运行，依次尝试同一周里的这几天，约到一个就停。
+# partial = true（有空就约）：这个时段有部分被占时，把剩下空着的时间都约上；否则必须整段都空才约。
 rules = [
 {rules}
 ]

@@ -38,7 +38,9 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button:disabled { opacity: .5; cursor: default; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
 .slot { display: grid; grid-template-columns: 56px 1fr auto 1fr 32px; gap: 8px; align-items: center; margin-bottom: 8px; }
-.slot.rule { grid-template-columns: 56px 104px 1fr auto 1fr 32px; }
+.slot.rule { grid-template-columns: 56px 104px 1fr auto 1fr 92px 32px; }
+.slot .p-wrap { font-size: 12px; color: var(--muted); display: flex; gap: 4px; align-items: center; white-space: nowrap; }
+.slot .p-wrap input { width: auto; }
 .slot .tag { font-size: 12px; color: var(--muted); }
 .grid3 { display: grid; grid-template-columns: 160px 160px; gap: 12px; }
 .plan { background: var(--bg); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin: 14px 0 0; }
@@ -174,16 +176,17 @@ function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.display
 function fmtDate(d) { const x = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6)); return `${+d.slice(4, 6)}月${+d.slice(6)}日 周${WEEK[x.getDay()]}`; }
 
 // ---------- 时段行 ----------
-function slotRow(container, value, removable, weekday) {
+function slotRow(container, value, removable, weekday, partial) {
   const [a, b] = (value || "09:00-12:00").split("-");
   const div = document.createElement("div");
   div.className = "slot" + (weekday ? " rule" : "");
   const opts = (from, to, sel) => TIMES.slice(from, to).map((t) => `<option ${t === sel ? "selected" : ""}>${t}</option>`).join("");
   const wsel = weekday ? `<select class="w">${[1, 2, 3, 4, 5, 6, 7].map((w) => `<option value="${w}" ${w === weekday ? "selected" : ""}>每周${WD[w]}</option>`).join("")}</select>` : "";
-  div.innerHTML = `<span class="tag"></span>${wsel}<select class="s">${opts(0, 48, a)}</select><span>至</span><select class="e">${opts(1, 49, b)}</select>` +
+  const pbox = weekday ? `<label class="p-wrap" title="这段时间有部分被占时，把剩下空着的都约上"><input type="checkbox" class="p" ${partial ? "checked" : ""}>有空就约</label>` : "";
+  div.innerHTML = `<span class="tag"></span>${wsel}<select class="s">${opts(0, 48, a)}</select><span>至</span><select class="e">${opts(1, 49, b)}</select>${pbox}` +
     (removable ? `<button class="x" title="删除">✕</button>` : "<span></span>");
   if (removable) div.querySelector(".x").onclick = () => { div.remove(); relabel(container); renderPlan(); };
-  div.querySelectorAll("select").forEach((s) => (s.onchange = () => { paintSel(); renderPlan(); }));
+  div.querySelectorAll("select, input.p").forEach((s) => (s.onchange = () => { paintSel(); renderPlan(); }));
   container.appendChild(div);
   relabel(container);
   return div;
@@ -292,7 +295,7 @@ async function init() {
   $("openAt").value = S.config.open_at;
   $("prep").value = S.config.prepare_minutes;
   $("rules").innerHTML = "";
-  S.config.rules.forEach((r, i) => slotRow($("rules"), r.slot, i > 0, r.weekday));
+  S.config.rules.forEach((r, i) => slotRow($("rules"), r.slot, i > 0, r.weekday, r.partial));
   $("pmsetHint").innerHTML = S.schedule_installed
     ? `Mac 需要在运行前醒着。改了规则或时间后，在终端执行一次（需要管理员密码）：<code>${S.pmset}</code>`
     : "";
@@ -328,7 +331,7 @@ $("go").onclick = () => {
 $("cancelBtn").onclick = () => $("confirm").close();
 $("okBtn").onclick = () => { $("confirm").close(); startJob("/api/book", { date: $("date").value, slots: readSlots($("slots")), dry_run: $("dry").checked }); };
 function readRules() {
-  return [...$("rules").children].map((d) => ({ weekday: +d.querySelector(".w").value, slot: `${d.querySelector(".s").value}-${d.querySelector(".e").value}` }));
+  return [...$("rules").children].map((d) => ({ weekday: +d.querySelector(".w").value, slot: `${d.querySelector(".s").value}-${d.querySelector(".e").value}`, partial: d.querySelector(".p").checked }));
 }
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function md(d) { return `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, "0")} 周${WEEK[d.getDay()]}`; }
@@ -344,8 +347,10 @@ function renderPlan() {  // 和 book.weekly_plan / common.run_schedule 同样的
   const pollFrom = fmt(openM - (S.config.poll_before_minutes || 0)), pollTo = fmt(openM + (S.config.wait_max_minutes || 0));
   const t0 = S.today, today = new Date(+t0.slice(0, 4), +t0.slice(4, 6) - 1, +t0.slice(6));
   let run = today; while (isoWd(run) !== runWd) run = addDays(run, 1);
+  const now = new Date();
+  if (run.getTime() === today.getTime() && now.getHours() * 60 + now.getMinutes() > t + 20) run = addDays(run, 7);  // 今天这次已经跑过
   const newest = addDays(run, ahead), anchor = addDays(newest, -((isoWd(newest) - first + 7) % 7));
-  const tries = rules.map((r, i) => `<li>${i ? "备选 " + i : "首选"}：<b>${md(addDays(anchor, r.weekday - first))} ${r.slot}</b></li>`).join("");
+  const tries = rules.map((r, i) => `<li>${i ? "备选 " + i : "首选"}：<b>${md(addDays(anchor, r.weekday - first))} ${r.slot}</b>${r.partial ? "（有部分被占就把剩下的都约上）" : "（整段都空才约）"}</li>`).join("");
   $("plan").innerHTML = `每<b>周${WD[runWd]} ${hm}</b> 开始准备，<b>${pollFrom}</b> 起每 3 秒刷新，新的一天一出现（预计 ${$("openAt").value}）立即提交，最多等到 ${pollTo}；约到一个就停。下一次 ${md(run)} 运行，依次尝试：<ol>${tries}</ol>`;
 }
 async function saveSched(enabled) {

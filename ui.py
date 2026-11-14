@@ -184,7 +184,7 @@ class Handler(BaseHTTPRequestHandler):
                     book.half_hours(r["slot"])
                     if not 1 <= int(r["weekday"]) <= 7:
                         raise ValueError("星期不对")
-                    rules.append({"weekday": int(r["weekday"]), "slot": r["slot"]})
+                    rules.append({"weekday": int(r["weekday"]), "slot": r["slot"], **({"partial": True} if r.get("partial") else {})})
                 if not rules:
                     raise ValueError("至少填一条规则")
                 h, m = (int(x) for x in body["open_at"].split(":"))
