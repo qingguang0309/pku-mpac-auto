@@ -128,14 +128,14 @@ dialog .note { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
 
   <section class="card">
     <h2><span class="step">3</span>每周自动预约 <span class="badge" id="schedBadge"></span></h2>
-    <p class="hint">新的一天在开放时间放出（今天 + 13 天）。程序只在首选那天开放的日子运行：提前几分钟联网、登录、打开预约页，
-      到点立刻提交；首选被占就依次试备选（同一周），约到一个就停，结果会弹系统通知。</p>
+    <p class="hint">新的一天在开放时间放出（今天 + 13 天）。下面每条规则都会约：每条在它那天开放的晚上各运行一次
+      （如周三的规则 → 周四晚），提前几分钟联网、登录、打开预约页，到点立刻提交；开始和结果都会弹系统通知。</p>
     <div class="grid3">
       <div><label for="openAt">网站开放时间</label><input id="openAt" type="time"></div>
       <div><label for="prep">提前准备（分钟）</label><input id="prep" type="number" min="1" max="30"></div>
     </div>
     <div style="margin-top: 14px" id="rules"></div>
-    <button class="link" id="addRule">＋ 添加备选</button>
+    <button class="link" id="addRule">＋ 添加规则</button>
     <div class="plan" id="plan"></div>
     <div class="row">
       <button class="primary" id="schedOn">保存并开启</button>
@@ -191,7 +191,10 @@ function slotRow(container, value, removable, weekday, partial) {
   relabel(container);
   return div;
 }
-function relabel(container) { [...container.children].forEach((d, i) => (d.querySelector(".tag").textContent = i ? `备选 ${i}` : "首选")); paintSel(); }
+function relabel(container) {
+  [...container.children].forEach((d, i) => (d.querySelector(".tag").textContent = container.id === "rules" ? `规则 ${i + 1}` : i ? `备选 ${i}` : "首选"));
+  paintSel();
+}
 function readSlots(container) {
   return [...container.children].map((d) => `${d.querySelector(".s").value}-${d.querySelector(".e").value}`);
 }
@@ -336,22 +339,22 @@ function readRules() {
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function md(d) { return `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, "0")} 周${WEEK[d.getDay()]}`; }
 function isoWd(d) { return d.getDay() || 7; }
-function renderPlan() {  // 和 book.weekly_plan / common.run_schedule 同样的算法
+function renderPlan() {  // 和 common.run_schedule / book.weekly_plan 同样的算法
   if (!S || !$("rules").children.length) return;
-  const rules = readRules(), ahead = S.config.days_ahead, first = rules[0].weekday;
-  const [oh, om] = ($("openAt").value || "00:08").split(":").map(Number);
-  let runWd = ((first - 1 - ahead) % 7 + 7) % 7 + 1, t = oh * 60 + om - (+$("prep").value || 0);
-  if (t < 0) { t += 1440; runWd = ((runWd - 2) % 7 + 7) % 7 + 1; }
+  const rules = readRules(), ahead = S.config.days_ahead;
+  const [oh, om] = ($("openAt").value || "00:10").split(":").map(Number);
   const fmt = (m) => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, "0")}:${String(((m % 60) + 60) % 60).padStart(2, "0")}`;
-  const hm = fmt(t), openM = oh * 60 + om;
+  const openM = oh * 60 + om, t = openM - (+$("prep").value || 0);
   const pollFrom = fmt(openM - (S.config.poll_before_minutes || 0)), pollTo = fmt(openM + (S.config.wait_max_minutes || 0));
   const t0 = S.today, today = new Date(+t0.slice(0, 4), +t0.slice(4, 6) - 1, +t0.slice(6));
-  let run = today; while (isoWd(run) !== runWd) run = addDays(run, 1);
-  const now = new Date();
-  if (run.getTime() === today.getTime() && now.getHours() * 60 + now.getMinutes() > t + 20) run = addDays(run, 7);  // 今天这次已经跑过
-  const newest = addDays(run, ahead), anchor = addDays(newest, -((isoWd(newest) - first + 7) % 7));
-  const tries = rules.map((r, i) => `<li>${i ? "备选 " + i : "首选"}：<b>${md(addDays(anchor, r.weekday - first))} ${r.slot}</b>${r.partial ? "（有部分被占就把剩下的都约上）" : "（整段都空才约）"}</li>`).join("");
-  $("plan").innerHTML = `每<b>周${WD[runWd]} ${hm}</b> 开始准备，<b>${pollFrom}</b> 起每 3 秒刷新，新的一天一出现（预计 ${$("openAt").value}）立即提交，最多等到 ${pollTo}；约到一个就停。下一次 ${md(run)} 运行，依次尝试：<ol>${tries}</ol>`;
+  const now = new Date(), passed = now.getHours() * 60 + now.getMinutes() > openM + (S.config.wait_max_minutes || 0);
+  const items = rules.map((r) => {
+    const openWd = (((r.weekday - 1 - ahead) % 7) + 7) % 7 + 1;
+    let run = today; while (isoWd(run) !== openWd || (run.getTime() === today.getTime() && passed)) run = addDays(run, 1);
+    return { run, html: `<b>${md(addDays(run, ahead))} ${r.slot}</b>${r.partial ? "（有空就约）" : "（整段都空才约）"} ← ${md(run)} ${fmt(t)} 运行` };
+  }).sort((a, b) => a.run - b.run);
+  const days = [...new Set(rules.map((r) => WD[(((r.weekday - 1 - ahead) % 7) + 7) % 7 + 1]))].join("、");
+  $("plan").innerHTML = `每<b>周${days} ${fmt(t)}</b> 开始准备，<b>${pollFrom}</b> 起每 3 秒刷新，新的一天一出现（预计 ${$("openAt").value}）立即提交，最多等到 ${pollTo}。每条规则都约。接下来：<ol>${items.map((x) => `<li>${x.html}</li>`).join("")}</ol>`;
 }
 async function saveSched(enabled) {
   const rules = readRules();
@@ -363,7 +366,7 @@ async function saveSched(enabled) {
 }
 $("openAt").oninput = renderPlan;
 $("prep").oninput = renderPlan;
-$("addRule").onclick = () => { slotRow($("rules"), null, true, 3); renderPlan(); };
+$("addRule").onclick = () => { slotRow($("rules"), "14:00-17:00", true, 1, true); renderPlan(); };
 $("autoTest").onclick = () => startJob("/api/auto_test", {});
 $("schedOn").onclick = () => saveSched(true);
 $("schedOff").onclick = () => saveSched(false);

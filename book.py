@@ -281,19 +281,11 @@ def pretty(date: str, slot: str) -> str:
 
 
 def weekly_plan(cfg: dict, today: dt.date) -> list[tuple[str, str, bool]]:
-    """本次要尝试的 [(日期, 时段, 有空就约)]，按优先级。
-
-    以第一条规则（如周五）最近开放的那天为准，其余规则取同一周里对应的那天；
-    还没开放或已经过去的日子跳过。例：周六运行 → 周五(+13)、周四(+12)、周三(+11)。"""
+    """今天要约的 [(日期, 时段, 有空就约)]：今天刚开放的那天（today + days_ahead）上的规则，按规则顺序。
+    例：周四运行 → 13 天后的周三那条规则。"""
     newest = today + dt.timedelta(days=cfg["days_ahead"])
-    first = cfg["rules"][0]["weekday"]
-    anchor = newest - dt.timedelta(days=(newest.isoweekday() - first) % 7)
-    plan = []
-    for r in cfg["rules"]:
-        d = anchor + dt.timedelta(days=int(r["weekday"]) - first)
-        if today <= d <= newest:
-            plan.append((d.strftime("%Y%m%d"), r["slot"], bool(r.get("partial"))))
-    return plan
+    return [(newest.strftime("%Y%m%d"), r["slot"], bool(r.get("partial")))
+            for r in cfg["rules"] if int(r["weekday"]) == newest.isoweekday()]
 
 
 def open_session_with_retry(pid: int, give_up_at: dt.datetime) -> "Session":
@@ -314,18 +306,18 @@ def auto(dry_run: bool = False) -> str:
     today = dt.date.today()
     plan = weekly_plan(cfg, today)
     if not plan:
-        raise Stop("今天没有需要预约的日期（规则里的日子都不在可预约范围内）")
+        newest = today + dt.timedelta(days=cfg["days_ahead"])
+        raise Stop(f"今天开放的是 {pretty(newest.strftime('%Y%m%d'), '')}，规则里没有这一天，不需要预约")
     for _, slot, _ in plan:
         half_hours(slot)
     label = lambda d, slot, part: pretty(d, slot) + ("（有空就约）" if part else "")
     desc = "、".join(label(*x) for x in plan)
     log(f"===== 每周自动预约：{desc}{'（dry-run，不提交）' if dry_run else ''}")
     if not dry_run:
-        # 一启动就提醒：本次已开始、要约哪几个时段（按顺序，约到一个就停）
-        order = " → ".join(label(*x) for x in plan)
+        # 一启动就提醒：本次已开始、要约哪个时段
         until = dt.datetime.strptime(cfg["open_at"], "%H:%M") + dt.timedelta(minutes=cfg["wait_max_minutes"])
         notify("⏳ mpac 自动预约已开始",
-               f"预计 {cfg['open_at']} 开放，依次尝试：{order}。运行期间（到 {until:%H:%M}）请勿登录 mpac")
+               f"预计 {cfg['open_at']} 开放，本次预约：{desc}。运行期间（到 {until:%H:%M}）请勿登录 mpac")
 
     oh, om = (int(x) for x in cfg["open_at"].split(":"))
     open_time = dt.datetime.combine(today, dt.time(oh, om))
@@ -342,22 +334,23 @@ def auto(dry_run: bool = False) -> str:
 def _auto_run(cfg, plan, open_time, poll_from, poll_until, dry_run) -> str:
     s = open_session_with_retry(cfg["instrument_pid"], give_up_at=open_time + dt.timedelta(minutes=2))
     with s:  # 结束时关浏览器、断开 VPN（出错会截图）
-        # 每周只要一次：这周的规则时段里已经有你的预约（比如上次跑过、或你手动约过），就不再约
-        open_dates = s.dates()
+        # 这个时段里已经有你的预约（比如之前跑过、或你手动约过）就跳过，不重复约
+        open_dates, todo, done = s.dates(), [], []
         for date, slot, part in plan:
-            if date not in open_dates:
-                continue
-            state, cells = s.grid(date), half_hours(slot)
-            mine = runs_of(cells, lambda c: state.get(c) == s.me)
-            if mine and (part or len(mine) == 1 and mine[0] == slot):
-                log(f"本周已有预约：{pretty(date, '、'.join(mine))}，不再预约")
-                return f"本周已约到 {pretty(date, '、'.join(mine))}（之前约的，这次没有重复预约）"
-        if (wait := (poll_from - dt.datetime.now()).total_seconds()) > 0:
+            if date in open_dates:
+                state, cells = s.grid(date), half_hours(slot)
+                mine = runs_of(cells, lambda c: state.get(c) == s.me)
+                if mine and (part or mine == [slot]):
+                    log(f"已有预约：{pretty(date, '、'.join(mine))}，跳过")
+                    done.append(f"{pretty(date, '、'.join(mine))}（之前已约）")
+                    continue
+            todo.append((date, slot, part))
+        if todo and (wait := (poll_from - dt.datetime.now()).total_seconds()) > 0:
             log(f"准备就绪，{poll_from:%H:%M} 开始刷新（{int(wait)} 秒后），网站预计 {cfg['open_at']} 开放")
             time.sleep(wait)
             s.reload()
         failures = []
-        for date, slot, part in plan:
+        for date, slot, part in todo:  # 每条都约，不是约到一个就停
             try:
                 s.wait_for_date(date, cfg["wait_retry_seconds"], max(0.0, (poll_until - dt.datetime.now()).total_seconds() / 60))
                 if part:
@@ -365,11 +358,14 @@ def _auto_run(cfg, plan, open_time, poll_from, poll_until, dry_run) -> str:
                     note = "" if got == slot else f"（{slot} 里其余时间已被别人占）"
                 else:
                     got, note = s.book(date, [slot], dry_run), ""
-                return f"{'可以约（试运行，未提交）' if dry_run else '已约到'} {pretty(date, got)}{note}"
+                done.append(pretty(date, got) + note)
             except Stop as e:
                 log(f"{date} {slot} 没约到：{e}")
-                failures.append(f"{date[4:6]}-{date[6:]} {slot}")
-        raise Stop("本周几个时段都没约到：" + "、".join(failures) + "。可以打开界面手动约其它时间")
+                failures.append(pretty(date, slot))
+        verb = "可以约（试运行，未提交）" if dry_run else "已约到"
+        if not done:
+            raise Stop("没约到：" + "、".join(failures) + "（全被占了）。可以打开界面手动约其它时间")
+        return f"{verb} " + "；".join(done) + (f"。没约到：{'、'.join(failures)}" if failures else "")
 
 
 def save_last_auto(ok: bool, msg: str, dry_run: bool) -> None:

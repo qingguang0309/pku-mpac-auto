@@ -96,15 +96,23 @@ def load_config() -> dict:
 WEEKDAYS = "一二三四五六日"  # 下标 0 = 周一（weekday=1）
 
 
-def run_schedule(cfg: dict) -> tuple[int, int, int]:
-    """自动运行的时间 (weekday 1-7, 时, 分)：第一条规则的那天开放的日子，open_at 之前 prepare_minutes 分钟。"""
-    wd = (cfg["rules"][0]["weekday"] - 1 - cfg["days_ahead"]) % 7 + 1
+def opening_weekday(cfg: dict, weekday: int) -> int:
+    """某个星期几（1-7）的日子，在哪个星期几开放预约（提前 days_ahead 天）。"""
+    return (weekday - 1 - cfg["days_ahead"]) % 7 + 1
+
+
+def run_schedule(cfg: dict) -> list[tuple[int, int, int]]:
+    """自动运行的时间列表 [(weekday 1-7, 时, 分)]：每条规则的日子开放的那天，open_at 之前 prepare_minutes 分钟。"""
     oh, om = (int(x) for x in cfg["open_at"].split(":"))
     t = oh * 60 + om - int(cfg["prepare_minutes"])
-    if t < 0:  # 跨到前一天
-        t += 24 * 60
-        wd = (wd - 2) % 7 + 1
-    return wd, t // 60, t % 60
+    out = set()
+    for r in cfg["rules"]:
+        wd = opening_weekday(cfg, int(r["weekday"]))
+        if t < 0:  # 跨到前一天
+            out.add(((wd - 2) % 7 + 1, (t + 1440) // 60, (t + 1440) % 60))
+        else:
+            out.add((wd, t // 60, t % 60))
+    return sorted(out)
 
 
 def save_config(cfg: dict) -> None:
@@ -124,8 +132,8 @@ days_ahead = {int(cfg["days_ahead"])}
 # 仪器编号：扫描电子显微镜 = 203（上机预约页面网址里的 pid）
 instrument_pid = {int(cfg["instrument_pid"])}
 
-# 每周想约的时段，按优先级排列。weekday：1=周一 … 7=周日。
-# 程序只在第一条开放的那天运行，依次尝试同一周里的这几天，约到一个就停。
+# 每周要约的时段，每条都约。weekday：1=周一 … 7=周日。
+# 每条规则在它那天开放的晚上（提前 days_ahead 天）各运行一次，例：周三的规则 → 周四晚运行。
 # partial = true（有空就约）：这个时段有部分被占时，把剩下空着的时间都约上；否则必须整段都空才约。
 rules = [
 {rules}
