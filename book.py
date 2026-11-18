@@ -100,7 +100,9 @@ def grid_state(page: Page, date: str) -> dict[str, str]:
         """(date) => {
           const rows = [...document.querySelectorAll('#pfrom tr')];
           const head = rows[1] ? [...rows[1].cells].map(c => c.innerText.trim()) : [];
-          const col = head.indexOf(date.slice(4,6) + '-' + date.slice(6,8));
+          // 表头日期不补零（如 12-2、1-5），按数字比较月、日
+          const md = (s) => { const m = /^(\\d{1,2})-(\\d{1,2})$/.exec(s); return m ? (+m[1]) * 100 + (+m[2]) : -1; };
+          const col = head.map(md).indexOf((+date.slice(4,6)) * 100 + (+date.slice(6,8)));
           const out = {};
           if (col < 0) return out;
           for (const r of rows.slice(2)) {
