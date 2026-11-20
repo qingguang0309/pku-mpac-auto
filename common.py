@@ -115,7 +115,27 @@ def run_schedule(cfg: dict) -> list[tuple[int, int, int]]:
     return sorted(out)
 
 
+def skip_dates(cfg: dict) -> list[str]:
+    """临时取消的自动预约（要约的日期 YYYYMMDD），去掉已经过去的日子。"""
+    today = f"{dt.date.today():%Y%m%d}"
+    return sorted({str(d) for d in cfg.get("skip_dates", []) if str(d) >= today})
+
+
+def set_skip(date: str, skip: bool) -> list[str]:
+    """取消（skip=True）或恢复某一天的自动预约，返回取消后的列表。规则本身不变。"""
+    if not re.fullmatch(r"\d{8}", date):
+        raise ValueError(f"日期格式不对：{date}（要求 YYYYMMDD）")
+    dt.datetime.strptime(date, "%Y%m%d")
+    cfg = load_config()
+    dates = set(skip_dates(cfg))
+    dates.add(date) if skip else dates.discard(date)
+    cfg["skip_dates"] = sorted(dates)
+    save_config(cfg)
+    return skip_dates(cfg)
+
+
 def save_config(cfg: dict) -> None:
+    skips = ", ".join(f'"{d}"' for d in skip_dates(cfg))
     rules = "\n".join(f'  {{ weekday = {int(r["weekday"])}, slot = "{r["slot"]}"'
                       + (", partial = true" if r.get("partial") else "") + " }," for r in cfg["rules"])
     CONFIG.write_text(f'''# mpac 自动预约配置（界面里「每周自动预约」保存时会重写本文件）。
@@ -138,6 +158,9 @@ instrument_pid = {int(cfg["instrument_pid"])}
 rules = [
 {rules}
 ]
+
+# 临时取消的自动预约：这些日子（要约的日期 YYYYMMDD）到点不约，规则不变。过去的日子保存时自动清掉。
+skip_dates = [{skips}]
 
 # 刷新间隔（秒）；开放时间之后最多再等几分钟
 wait_retry_seconds = {int(cfg["wait_retry_seconds"])}

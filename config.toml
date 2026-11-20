@@ -17,9 +17,12 @@ instrument_pid = 203
 # partial = true（有空就约）：这个时段有部分被占时，把剩下空着的时间都约上；否则必须整段都空才约。
 rules = [
   { weekday = 3, slot = "14:00-17:00", partial = true },
-  { weekday = 4, slot = "14:00-17:00", partial = true },
+  { weekday = 4, slot = "15:00-17:30", partial = true },
   { weekday = 5, slot = "13:00-17:30", partial = true },
 ]
+
+# 临时取消的自动预约：这些日子（要约的日期 YYYYMMDD）到点不约，规则不变。过去的日子保存时自动清掉。
+skip_dates = ["20261204"]
 
 # 刷新间隔（秒）；开放时间之后最多再等几分钟
 wait_retry_seconds = 3

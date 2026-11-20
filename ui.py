@@ -16,7 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import book
 import scheduler
 import vpn
-from common import KC_ACCOUNT, KC_ID6, KC_PHONE, LISTENERS, ROOT, Stop, kc_get, kc_set, load_config, log, notify, save_config
+from common import (KC_ACCOUNT, KC_ID6, KC_PHONE, LISTENERS, ROOT, Stop, kc_get, kc_set, load_config, log, notify,
+                    save_config, set_skip, skip_dates)
 
 PORT = 8765
 LAST = ROOT / "logs" / "last_auto.json"
@@ -98,6 +99,14 @@ def task_book(date: str, slots: list[str], dry_run: bool):
     return msg
 
 
+def task_auto_test():
+    try:
+        return book.auto(dry_run=True)
+    except book.Skipped as e:  # 这次要约的都取消了，不算失败
+        log(f"⏭ {e}")
+        return str(e)
+
+
 # ---------- HTTP ----------
 
 def state() -> dict:
@@ -107,7 +116,8 @@ def state() -> dict:
         "account": acct[0] if acct and acct[0].isascii() else None,
         "id6_saved": kc_get(KC_ID6) is not None,
         "phone_saved": kc_get(KC_PHONE) is not None,
-        "config": {k: cfg.get(k) for k in ("open_at", "prepare_minutes", "poll_before_minutes", "wait_max_minutes", "days_ahead", "rules")},
+        "config": {**{k: cfg.get(k) for k in ("open_at", "prepare_minutes", "poll_before_minutes", "wait_max_minutes", "days_ahead", "rules")},
+                   "skip_dates": skip_dates(cfg)},
         "auto_running": auto_running(),
         "schedule": scheduler.describe(),
         "pmset": scheduler.pmset_command(),
@@ -195,8 +205,13 @@ class Handler(BaseHTTPRequestHandler):
                 save_config(cfg)
                 scheduler.install() if body.get("enabled") else scheduler.uninstall()
                 return self.send(200, {"ok": True})
+            if self.path == "/api/skip":
+                # 取消 / 恢复某一天的自动预约（只改 skip_dates，规则和定时任务不变）
+                if auto_running():
+                    raise RuntimeError("每周自动预约正在进行，请等它结束再改")
+                return self.send(200, {"ok": True, "skip_dates": set_skip(str(body["date"]), bool(body["skip"]))})
             if self.path == "/api/auto_test":
-                return self.send(200, {"started": start_job("auto", lambda: book.auto(dry_run=True))})
+                return self.send(200, {"started": start_job("auto", task_auto_test)})
             if self.path == "/api/quit":
                 self.send(200, {"ok": True})
                 threading.Thread(target=self.server.shutdown, daemon=True).start()

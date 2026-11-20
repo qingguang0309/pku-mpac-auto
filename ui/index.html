@@ -47,6 +47,11 @@ button:disabled { opacity: .5; cursor: default; }
 .plan b { font-weight: 600; }
 .plan ol { margin: 6px 0 0; padding-left: 20px; color: var(--muted); }
 .plan ol b { color: var(--text); }
+.plan ol.runs { list-style: none; padding: 0; margin-top: 8px; }
+.plan ol.runs li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 4px 0; border-top: 1px solid var(--line); }
+.plan ol.runs li.off .what { text-decoration: line-through; opacity: .55; }
+.plan ol.runs .off-tag { font-size: 12px; color: var(--bad); margin-left: 6px; text-decoration: none; }
+.plan ol.runs .skip { font-size: 13px; padding: 0; white-space: nowrap; }
 code { font: 12px ui-monospace, Menlo, monospace; background: var(--bg); padding: 2px 6px; border-radius: 4px; user-select: all; }
 .slot .x { padding: 4px 0; border: none; color: var(--muted); background: none; }
 .link { border: none; background: none; color: var(--accent); padding: 4px 0; }
@@ -305,7 +310,7 @@ async function init() {
   renderPlan();
   const L = S.last_auto;
   $("lastAuto").innerHTML = L && !L.dry_run
-    ? `<div class="result ${L.ok ? "ok" : "bad"}">上次自动预约（${L.time}）：${L.ok ? "✅" : "❌"} ${L.message}</div>` : "";
+    ? `<div class="result ${L.ok ? "ok" : "bad"}">上次自动预约（${L.time}）：${L.skipped ? "⏭" : L.ok ? "✅" : "❌"} ${L.message}</div>` : "";
   if (S.auto_running) toast("每周自动预约正在进行，请等它结束再操作");
   showJob(S.job);
   if (S.job.running && !polling) polling = setInterval(poll, 800);
@@ -348,14 +353,31 @@ function renderPlan() {  // 和 common.run_schedule / book.weekly_plan 同样的
   const pollFrom = fmt(openM - (S.config.poll_before_minutes || 0)), pollTo = fmt(openM + (S.config.wait_max_minutes || 0));
   const t0 = S.today, today = new Date(+t0.slice(0, 4), +t0.slice(4, 6) - 1, +t0.slice(6));
   const now = new Date(), passed = now.getHours() * 60 + now.getMinutes() > openM + (S.config.wait_max_minutes || 0);
-  const items = rules.map((r) => {
+  const skip = new Set(S.config.skip_dates || []), items = [];
+  rules.forEach((r) => {
     const openWd = (((r.weekday - 1 - ahead) % 7) + 7) % 7 + 1;
     let run = today; while (isoWd(run) !== openWd || (run.getTime() === today.getTime() && passed)) run = addDays(run, 1);
-    return { run, html: `<b>${md(addDays(run, ahead))} ${r.slot}</b>${r.partial ? "（有空就约）" : "（整段都空才约）"} ← ${md(run)} ${fmt(t)} 运行` };
-  }).sort((a, b) => a.run - b.run);
+    for (let k = 0; k < 2; k++, run = addDays(run, 7)) {  // 列出接下来两周，每次都可以单独取消
+      const target = addDays(run, ahead), d = ymd(target), off = skip.has(d);
+      items.push({ run, html: `<li class="${off ? "off" : ""}"><span><span class="what"><b>${md(target)} ${r.slot}</b>${r.partial ? "（有空就约）" : "（整段都空才约）"} ← ${md(run)} ${fmt(t)} 运行</span>${off ? '<span class="off-tag">已取消</span>' : ""}</span>` +
+        `<button class="link skip" data-date="${d}" data-skip="${off ? 0 : 1}">${off ? "恢复" : "取消这次"}</button></li>` });
+    }
+  });
+  items.sort((a, b) => a.run - b.run);
   const days = [...new Set(rules.map((r) => WD[(((r.weekday - 1 - ahead) % 7) + 7) % 7 + 1]))].join("、");
-  $("plan").innerHTML = `每<b>周${days} ${fmt(t)}</b> 开始准备，<b>${pollFrom}</b> 起每 3 秒刷新，新的一天一出现（预计 ${$("openAt").value}）立即提交，最多等到 ${pollTo}。每条规则都约。接下来：<ol>${items.map((x) => `<li>${x.html}</li>`).join("")}</ol>`;
+  $("plan").innerHTML = `每<b>周${days} ${fmt(t)}</b> 开始准备，<b>${pollFrom}</b> 起每 3 秒刷新，新的一天一出现（预计 ${$("openAt").value}）立即提交，确认约到就结束（没开放最多等到 ${pollTo}）。每条规则都约。` +
+    `接下来两周（已经约到了、某次不想约，点「取消这次」，只跳过那一次，规则不变，立即生效）：<ol class="runs">${items.map((x) => x.html).join("")}</ol>`;
 }
+function ymd(d) { return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`; }
+$("plan").onclick = async (e) => {
+  const b = e.target.closest("button.skip"); if (!b) return;
+  const date = b.dataset.date, skip = b.dataset.skip === "1";
+  try {
+    const r = await api("/api/skip", { date, skip });
+    S.config.skip_dates = r.skip_dates; renderPlan();
+    toast(`${skip ? "已取消" : "已恢复"} ${fmtDate(date)} 的自动预约`);
+  } catch (err) { toast(err.message); }
+};
 async function saveSched(enabled) {
   const rules = readRules();
   if (enabled && !validSlots(rules.map((r) => r.slot))) return;

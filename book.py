@@ -4,6 +4,7 @@
   uv run python book.py              # 每周自动预约（定时任务跑的就是这个）：按 config.toml 的 rules 依次尝试
   uv run python book.py --dry-run    # 同上，但不点「提交预约」
   uv run python book.py --date 20261120 --slot 14:00-17:00 --slot 09:00-12:00   # 指定日期和时段（按顺序尝试）
+  uv run python book.py --skip 20261210      # 取消 12-10 那天的自动预约（规则不变）；--unskip 恢复
 """
 import argparse
 import datetime as dt
@@ -17,10 +18,14 @@ import urllib.parse
 from playwright.sync_api import Page, sync_playwright
 
 import vpn
-from common import LOG_DIR, WEEKDAYS, Stop, credentials, load_config, log, notify
+from common import LOG_DIR, WEEKDAYS, Stop, credentials, load_config, log, notify, set_skip, skip_dates
 
 BASE = "https://mpac.pku.edu.cn"
 AUTO_LOCK = LOG_DIR / "auto.lock"
+
+
+class Skipped(Stop):
+    """这次要约的日子都被手动取消了（skip_dates），不是失败。"""
 IAAA_URL = (
     "https://iaaa.pku.edu.cn/iaaa/oauth.jsp?appID=mpac"
     "&appName=%e5%8c%97%e4%ba%ac%e5%a4%a7%e5%ad%a6%e6%9d%90%e6%96%99%e5%8a%a0%e5%b7%a5%e4%b8%8e%e6%b5%8b%e8%af%95%e4%b8%ad%e5%bf%83"
@@ -313,13 +318,20 @@ def auto(dry_run: bool = False) -> str:
     for _, slot, _ in plan:
         half_hours(slot)
     label = lambda d, slot, part: pretty(d, slot) + ("（有空就约）" if part else "")
+    # 在界面里点了「取消这次」的日子：这次不约，规则不变
+    skip = set(skip_dates(cfg))
+    skipped = "、".join(pretty(d, slot) for d, slot, _ in plan if d in skip)
+    plan = [x for x in plan if x[0] not in skip]
+    if not plan:
+        log(f"===== 每周自动预约：{skipped} 已取消，这次不约")
+        raise Skipped(f"已按你的设置跳过：{skipped}")
     desc = "、".join(label(*x) for x in plan)
-    log(f"===== 每周自动预约：{desc}{'（dry-run，不提交）' if dry_run else ''}")
+    log(f"===== 每周自动预约：{desc}{f'（已取消：{skipped}）' if skipped else ''}{'（dry-run，不提交）' if dry_run else ''}")
     if not dry_run:
         # 一启动就提醒：本次已开始、要约哪个时段
         until = dt.datetime.strptime(cfg["open_at"], "%H:%M") + dt.timedelta(minutes=cfg["wait_max_minutes"])
         notify("⏳ mpac 自动预约已开始",
-               f"预计 {cfg['open_at']} 开放，本次预约：{desc}。运行期间（到 {until:%H:%M}）请勿登录 mpac")
+               f"预计 {cfg['open_at']} 开放，本次预约：{desc}。约完就结束，结束前（最晚 {until:%H:%M}）请勿登录 mpac")
 
     oh, om = (int(x) for x in cfg["open_at"].split(":"))
     open_time = dt.datetime.combine(today, dt.time(oh, om))
@@ -328,7 +340,8 @@ def auto(dry_run: bool = False) -> str:
     LOG_DIR.mkdir(exist_ok=True)
     AUTO_LOCK.write_text(str(os.getpid()))  # 界面看到它就不去登录，免得把这里的登录挤掉
     try:
-        return _auto_run(cfg, plan, open_time, poll_from, poll_until, dry_run)
+        msg = _auto_run(cfg, plan, open_time, poll_from, poll_until, dry_run)
+        return msg + (f"。已按设置跳过：{skipped}" if skipped else "")
     finally:
         AUTO_LOCK.unlink(missing_ok=True)
 
@@ -370,11 +383,12 @@ def _auto_run(cfg, plan, open_time, poll_from, poll_until, dry_run) -> str:
         return f"{verb} " + "；".join(done) + (f"。没约到：{'、'.join(failures)}" if failures else "")
 
 
-def save_last_auto(ok: bool, msg: str, dry_run: bool) -> None:
+def save_last_auto(ok: bool, msg: str, dry_run: bool, skipped: bool = False) -> None:
     """记下最近一次每周自动预约的结果，界面里会显示。"""
     LOG_DIR.mkdir(exist_ok=True)
     (LOG_DIR / "last_auto.json").write_text(json.dumps(
-        {"time": f"{dt.datetime.now():%Y-%m-%d %H:%M}", "ok": ok, "message": msg, "dry_run": dry_run}, ensure_ascii=False))
+        {"time": f"{dt.datetime.now():%Y-%m-%d %H:%M}", "ok": ok, "message": msg, "dry_run": dry_run, "skipped": skipped},
+        ensure_ascii=False))
 
 
 def main() -> int:
@@ -382,14 +396,32 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="不点提交预约")
     ap.add_argument("--date", help="指定日期 YYYYMMDD（和 --slot 一起用）；不指定则按 config.toml 每周规则")
     ap.add_argument("--slot", action="append", help="指定时段（可重复，按优先级）")
+    ap.add_argument("--skip", metavar="YYYYMMDD", action="append", help="取消这一天的自动预约（规则不变，可重复）")
+    ap.add_argument("--unskip", metavar="YYYYMMDD", action="append", help="恢复这一天的自动预约（可重复）")
     args = ap.parse_args()
+    if args.skip or args.unskip:
+        try:
+            for d in args.skip or []:
+                set_skip(d, True)
+            for d in args.unskip or []:
+                set_skip(d, False)
+        except ValueError as e:
+            ap.error(str(e))
+        left = skip_dates(load_config())
+        print("已取消的自动预约：" + ("、".join(pretty(d, "").strip() for d in left) or "无"))
+        return 0
     if bool(args.date) != bool(args.slot):
         ap.error("--date 和 --slot 要一起用")
     is_auto = not args.date
+    skipped = False
     try:
         msg = run(args.date, args.slot, args.dry_run) if args.date else auto(args.dry_run)
         notify("✅ mpac 上机预约成功" if not args.dry_run else "mpac 预约试运行", f"{msg}（扫描电子显微镜）")
         code = 0
+    except Skipped as e:
+        log(f"⏭ {e}")
+        msg, code, skipped = str(e), 0, True
+        notify("⏭ mpac 自动预约已跳过", msg)
     except Stop as e:
         log(f"❌ {e}")
         msg, code = str(e), 1
@@ -399,7 +431,7 @@ def main() -> int:
         msg, code = f"程序出错：{type(e).__name__}: {e}"[:300], 2
         notify("❌ mpac 上机预约出错", msg)
     if is_auto:
-        save_last_auto(code == 0, msg, args.dry_run)
+        save_last_auto(code == 0, msg, args.dry_run, skipped)
     return code
 
 
