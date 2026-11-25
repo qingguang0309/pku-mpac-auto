@@ -6,76 +6,129 @@
 <title>mpac 上机预约</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <style>
+/* 北大红做唯一的强调色；底色用冷灰，数字一律等宽对齐（这个页面主要是在看日期和时间） */
 :root {
-  --bg: #f6f5f3; --card: #ffffff; --text: #1f1f1f; --muted: #6b6b6b; --line: #e4e1dc;
-  --accent: #9b0a0e; --accent-soft: #fbeceb; --ok: #1f7a3d; --ok-soft: #e7f4ea; --bad: #b42318; --bad-soft: #fdecea;
-  --free: #e3f3e8; --free-line: #9fd3b0; --taken: #ebe9e5; --mine: #9b0a0e;
+  --bg: #eceef1; --card: #ffffff; --sunk: #f4f5f7; --text: #1b1d21; --muted: #626872; --line: #dcdfe4;
+  --accent: #8f1015; --accent-strong: #8f1015; --accent-soft: #f8e9e9; --ok: #1d7040; --ok-soft: #e5f2ea; --bad: #b42318; --bad-soft: #fcebe9;
+  --free: #e2f1e7; --free-line: #a3d3b3; --taken: #e4e6ea; --mine: #8f1015;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #161616; --card: #202020; --text: #ececec; --muted: #9a9a9a; --line: #353535;
-    --accent: #e0484d; --accent-soft: #3a1c1d; --ok: #57c27a; --ok-soft: #1c3324; --bad: #f07167; --bad-soft: #3b1f1d;
-    --free: #1d3526; --free-line: #2f6b45; --taken: #2c2c2c; --mine: #e0484d; }
+  :root { --bg: #15171a; --card: #1e2125; --sunk: #181a1e; --text: #eceef1; --muted: #9aa0a9; --line: #33373d;
+    --accent: #e2555a; --accent-strong: #b3303a; --accent-soft: #3a1d1f; --ok: #5cc184; --ok-soft: #1a3124; --bad: #f07167; --bad-soft: #3b1f1d;
+    --free: #1b3324; --free-line: #2f6b45; --taken: #2b2e33; --mine: #c9383e; }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; }
-main { max-width: 760px; margin: 0 auto; padding: 28px 16px 60px; }
-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
-h1 { font-size: 22px; margin: 0; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; }
+.num { font-variant-numeric: tabular-nums; }
+main { max-width: 800px; margin: 0 auto; padding: 24px 16px 64px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+h1 { font-size: 20px; margin: 0; display: flex; align-items: center; gap: 10px; }
 header .sub { color: var(--muted); font-size: 13px; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
-.card h2 { font-size: 16px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
-.card .hint { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
-.step { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; }
-.badge { font-size: 12px; font-weight: normal; padding: 1px 8px; border-radius: 10px; background: var(--taken); color: var(--muted); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 14px; }
+.card h2 { font-size: 16px; margin: 0; display: flex; align-items: center; gap: 8px; }
+.hint { color: var(--muted); font-size: 13px; margin: 6px 0 14px; max-width: 62ch; }
+.badge { font-size: 12px; font-weight: normal; padding: 1px 8px; border-radius: 10px; background: var(--taken); color: var(--muted); white-space: nowrap; }
 .badge.on { background: var(--ok-soft); color: var(--ok); }
-.grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-@media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
+.badge.warn { background: var(--accent-soft); color: var(--accent); }
 label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-input, select { width: 100%; font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
-input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input, select { width: 100%; min-width: 0; font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+select { font-variant-numeric: tabular-nums; }
+input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button { font: inherit; border-radius: 8px; padding: 8px 16px; cursor: pointer; border: 1px solid var(--line); background: var(--card); color: var(--text); }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:hover:not(:disabled) { border-color: var(--muted); }
+button.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--accent-strong); }
 button:disabled { opacity: .5; cursor: default; }
-.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
-.slot { display: grid; grid-template-columns: 56px 1fr auto 1fr 32px; gap: 8px; align-items: center; margin-bottom: 8px; }
-.slot.rule { grid-template-columns: 56px 104px 1fr auto 1fr 92px 32px; }
-.slot .p-wrap { font-size: 12px; color: var(--muted); display: flex; gap: 4px; align-items: center; white-space: nowrap; }
-.slot .p-wrap input { width: auto; }
-.slot .tag { font-size: 12px; color: var(--muted); }
-.grid3 { display: grid; grid-template-columns: 160px 160px; gap: 12px; }
-.plan { background: var(--bg); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin: 14px 0 0; }
-.plan b { font-weight: 600; }
-.plan ol { margin: 6px 0 0; padding-left: 20px; color: var(--muted); }
-.plan ol b { color: var(--text); }
-.plan ol.runs { list-style: none; padding: 0; margin-top: 8px; }
-.plan ol.runs li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 4px 0; border-top: 1px solid var(--line); }
-.plan ol.runs li.off .what { text-decoration: line-through; opacity: .55; }
-.plan ol.runs .off-tag { font-size: 12px; color: var(--bad); margin-left: 6px; text-decoration: none; }
-.plan ol.runs .skip { font-size: 13px; padding: 0; white-space: nowrap; }
-code { font: 12px ui-monospace, Menlo, monospace; background: var(--bg); padding: 2px 6px; border-radius: 4px; user-select: all; }
-.slot .x { padding: 4px 0; border: none; color: var(--muted); background: none; }
 .link { border: none; background: none; color: var(--accent); padding: 4px 0; }
-.check { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.link:hover:not(:disabled) { text-decoration: underline; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.check { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); margin: 0; }
 .check input { width: auto; }
+code { font: 12px ui-monospace, Menlo, monospace; background: var(--sunk); padding: 2px 6px; border-radius: 4px; user-select: all; overflow-wrap: anywhere; }
+
+/* ---------- 自动预约：页面的主角 ---------- */
+.hero { padding: 0; overflow: hidden; }
+.hero-top { padding: 20px 20px 16px; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: start; }
+.next-label { font-size: 13px; color: var(--muted); }
+.next-when { font-size: 30px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.25; }
+.next-what { font-size: 15px; margin-top: 2px; }
+.next-what b { font-weight: 600; }
+.next-none { font-size: 15px; color: var(--muted); padding: 6px 0; }
+#lastAuto { padding: 0 20px; }
+#lastAuto .result { margin: 0 0 14px; }
+.runs { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.runs li { display: grid; grid-template-columns: 116px 1fr auto; gap: 14px; align-items: center; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+.runs li:last-child { border-bottom: none; }
+.runs .when { font-size: 13px; color: var(--muted); line-height: 1.35; }
+.runs .when b { display: block; font-size: 15px; color: var(--text); font-weight: 600; }
+.runs .what b { font-weight: 600; }
+.runs .what small { color: var(--muted); font-size: 12px; margin-left: 6px; }
+.runs li.is-next { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.runs li.off .when, .runs li.off .what { opacity: .5; }
+.runs li.off .what b { text-decoration: line-through; }
+.runs .off-tag { font-size: 12px; color: var(--bad); margin-left: 6px; }
+.runs .skip { font-size: 13px; white-space: nowrap; }
+.runs-note { margin: 0; padding: 10px 20px 14px; border-top: 1px solid var(--line); background: var(--sunk); color: var(--muted); font-size: 12.5px; }
+.dirty { color: var(--accent); font-size: 13px; }
+.alert { margin: 16px 20px 0; padding: 12px 14px; border-radius: 8px; background: var(--bad-soft); color: var(--bad); display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: 14px; }
+.alert b { font-weight: 600; }
+.alert[hidden] { display: none; }
+.otp-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.otp-row > div { width: 160px; }
+.otp-row input { letter-spacing: .15em; }
+
+details.fold { border-top: 1px solid var(--line); }
+details.fold > summary { list-style: none; cursor: pointer; padding: 14px 20px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; margin-right: 2px; }
+details.fold[open] > summary::before { transform: rotate(45deg); }
+details.fold > summary .sum-note { font-weight: normal; color: var(--muted); font-size: 13px; }
+.fold-body { padding: 0 20px 20px; }
+.fold-card > details.fold { border-top: none; margin: -20px; }
+.fold-card > details.fold > summary { padding: 20px; }
+.fold-card > details.fold > summary h2 { font-size: 16px; }
+
+.grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.grid3 { display: grid; grid-template-columns: repeat(2, 160px); gap: 12px; }
+.plan { background: var(--sunk); border-radius: 8px; padding: 10px 14px; font-size: 13px; color: var(--muted); margin: 14px 0 0; }
+.plan b { color: var(--text); font-weight: 600; }
+
+/* ---------- 时段行（手动预约的首选/备选，自动预约的规则） ---------- */
+.slot { display: grid; grid-template-columns: 52px 1fr auto 1fr 32px; grid-template-areas: "tag s to e x"; gap: 8px; align-items: center; margin-bottom: 8px; }
+.slot.rule { grid-template-columns: 52px 104px 1fr auto 1fr auto 32px; grid-template-areas: "tag w s to e p x"; }
+.slot .tag { grid-area: tag; font-size: 12px; color: var(--muted); }
+.slot .w { grid-area: w; } .slot .s { grid-area: s; } .slot .to { grid-area: to; color: var(--muted); font-size: 13px; } .slot .e { grid-area: e; }
+.slot .p-wrap { grid-area: p; font-size: 12px; color: var(--muted); display: flex; gap: 4px; align-items: center; white-space: nowrap; margin: 0; }
+.slot .p-wrap input { width: auto; }
+.slot .x { grid-area: x; padding: 4px 0; border: none; color: var(--muted); background: none; }
+
+/* ---------- 空闲格子 ---------- */
 #timeline { display: none; margin-top: 16px; }
 .tl-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 8px; }
 .tl-grp .lbl { font-size: 11px; color: var(--muted); margin-bottom: 3px; font-variant-numeric: tabular-nums; }
 .tl-grp .cells { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
-@media (max-width: 600px) { .tl-row { grid-template-columns: repeat(2, 1fr); } }
 .cell { height: 26px; border-radius: 4px; border: 1px solid var(--free-line); background: var(--free); font-size: 10px; color: var(--muted); overflow: hidden; white-space: nowrap; text-align: center; line-height: 24px; cursor: pointer; }
+.cell:hover { border-color: var(--ok); }
 .cell.taken { background: var(--taken); border-color: var(--taken); cursor: not-allowed; }
 .cell.mine { background: var(--mine); color: #fff; border-color: var(--mine); cursor: default; }
 .cell.sel { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-soft); }
-.legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
 .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--line); vertical-align: -2px; margin-right: 4px; }
-#progress { display: none; }
-#logs { background: var(--bg); border-radius: 8px; padding: 10px 12px; font: 12px/1.6 ui-monospace, Menlo, monospace; max-height: 220px; overflow: auto; white-space: pre-wrap; margin: 0; }
-.result { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-weight: 600; }
+
+/* ---------- 进度（出现在发起它的那一块里） ---------- */
+.progress { display: none; margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--sunk); }
+.hero .progress, details .progress { margin: 0 0 16px; }
+.progress h3 { font-size: 14px; margin: 0 0 8px; }
+#logs { font: 12px/1.6 ui-monospace, Menlo, monospace; max-height: 220px; overflow: auto; white-space: pre-wrap; margin: 0; color: var(--muted); }
+.result { margin-top: 10px; padding: 9px 14px; border-radius: 8px; font-weight: 600; font-size: 14px; }
 .result.ok { background: var(--ok-soft); color: var(--ok); }
 .result.bad { background: var(--bad-soft); color: var(--bad); }
-.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: s 0.8s linear infinite; vertical-align: -1px; }
+.result.skip { background: var(--taken); color: var(--muted); }
+.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: s .8s linear infinite; vertical-align: -1px; }
 @keyframes s { to { transform: rotate(360deg); } }
-.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 8px; font-size: 14px; display: none; }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } details.fold > summary::before { transition: none; } }
+
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 8px; font-size: 14px; display: none; max-width: calc(100vw - 32px); }
 dialog { border: 1px solid var(--line); border-radius: 12px; padding: 22px; background: var(--card); color: var(--text); width: min(420px, 92vw); }
 dialog::backdrop { background: rgba(0,0,0,.35); }
 dialog h3 { margin: 0 0 12px; }
@@ -83,39 +136,81 @@ dialog dl { display: grid; grid-template-columns: 64px 1fr; gap: 6px 10px; margi
 dialog dt { color: var(--muted); }
 dialog dd { margin: 0; font-weight: 600; }
 dialog .note { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+
+@media (max-width: 600px) {
+  .card { padding: 16px; }
+  .fold-card > details.fold { margin: -16px; }
+  .fold-card > details.fold > summary { padding: 16px; }
+  .hero-top { padding: 16px; grid-template-columns: 1fr; }
+  .hero-top .badge { justify-self: start; grid-row: 1; }
+  .next-when { font-size: 26px; }
+  #lastAuto { padding: 0 16px; }
+  .alert { margin: 16px 16px 0; }
+  .runs li { grid-template-columns: 1fr auto; grid-template-areas: "when skip" "what what"; gap: 2px 12px; padding: 10px 16px; }
+  .runs .when { grid-area: when; } .runs .what { grid-area: what; } .runs .skip { grid-area: skip; }
+  .runs .when b { display: inline; margin-right: 6px; }
+  .runs-note, .fold-body { padding-left: 16px; padding-right: 16px; }
+  details.fold > summary { padding: 14px 16px; }
+  .grid2 { grid-template-columns: 1fr; }
+  .grid3 { grid-template-columns: 1fr 1fr; }
+  .slot { grid-template-columns: 40px 1fr auto 1fr 24px; }
+  .slot.rule { grid-template-columns: 1fr auto 1fr 24px; grid-template-areas: "tag tag tag tag" "w w p x" "s to e ."; row-gap: 6px; margin-bottom: 14px; }
+  .tl-row { grid-template-columns: repeat(2, 1fr); }
+}
 </style>
 </head>
 <body>
 <main>
   <header>
-    <h1><img src="/favicon.png" alt="" width="30" height="30" style="vertical-align: -6px; margin-right: 8px">mpac 上机预约</h1>
+    <h1><img src="/favicon.png" alt="" width="28" height="28">mpac 上机预约</h1>
     <span class="sub">扫描电子显微镜 · 北京大学材料加工与测试中心</span>
   </header>
 
-  <section class="card" id="setup">
-    <h2><span class="step">1</span>账号与 VPN <span class="badge" id="acctBadge"></span></h2>
-    <p class="hint">北大统一认证的学号和密码（IAAA 和 VPN 共用），VPN 证书验证用的身份证后 6 位，以及 VPN 有时要求补全中间 4 位的手机号（填完整号码，程序自动补全）。只保存在本机钥匙串里。
-      在校园网时直接访问；不在校园网时自动连接北大 VPN（vpn.pku.edu.cn），且只给预约程序用，不影响其它网络。</p>
-    <div class="grid2">
-      <div><label for="user">学号</label><input id="user" autocomplete="off" inputmode="numeric"></div>
-      <div><label for="pwd">密码</label><input id="pwd" type="password" autocomplete="new-password"></div>
-      <div><label for="id6">身份证后 6 位</label><input id="id6" type="password" maxlength="6" autocomplete="off"></div>
-      <div><label for="phone">手机号</label><input id="phone" type="password" maxlength="13" autocomplete="off" inputmode="numeric"></div>
+  <section class="card hero" id="autoSec" aria-labelledby="autoTitle">
+    <div class="alert" id="otpAlert" role="alert" hidden>
+      <span><b>需要手机令牌</b>：北大统一认证要求二次验证，自动预约现在登录不了。</span>
+      <button class="primary" id="otpGo">输入手机令牌</button>
     </div>
-    <div class="row">
-      <button class="primary" id="saveCred">保存</button>
-      <button id="testNet">测试连接</button>
+    <div class="hero-top">
+      <div>
+        <div class="next-label" id="autoTitle">下一次自动预约</div>
+        <div id="next"></div>
+      </div>
+      <span class="badge" id="schedBadge"></span>
     </div>
+    <div id="lastAuto"></div>
+    <ol class="runs num" id="runs"></ol>
+    <p class="runs-note">已经约到了、某次不想约：点「取消这次」只跳过那一次，规则不变，立即生效。</p>
+    <details class="fold" id="ruleBox">
+      <summary>规则和运行时间 <span class="sum-note" id="ruleSum"></span></summary>
+      <div class="fold-body">
+        <p class="hint" style="margin-top: 0">每条规则都约：网站每天在开放时间放出「今天 + 13 天」，每条规则在它那天开放的晚上运行一次（周三的规则 → 提前 13 天的周四晚）。</p>
+        <div class="grid3">
+          <div><label for="openAt">网站开放时间</label><input id="openAt" type="time" class="num"></div>
+          <div><label for="prep">提前准备（分钟）</label><input id="prep" type="number" min="1" max="30" class="num"></div>
+        </div>
+        <div style="margin-top: 14px" id="rules"></div>
+        <button class="link" id="addRule">＋ 添加规则</button>
+        <div class="plan" id="plan"></div>
+        <div class="row">
+          <button class="primary" id="schedOn">保存并开启</button>
+          <button id="schedOff">停用</button>
+          <button id="autoTest">按当前规则试运行一次（不提交）</button>
+          <span class="dirty" id="dirty"></span>
+        </div>
+        <p class="hint" style="margin: 14px 0 0" id="pmsetHint"></p>
+      </div>
+    </details>
   </section>
 
-  <section class="card">
-    <h2><span class="step">2</span>预约</h2>
-    <p class="hint">选日期和时段，可以加备选时段：首选被占时按顺序尝试，约到一个就停。可以先「查看空闲」，在格子里点两下选起止时间。</p>
+  <section class="card" id="bookSec">
+    <h2>手动预约</h2>
+    <p class="hint">选日期和时段，可以加备选：首选被占时按顺序尝试，约到一个就停。先「查看空闲」，就可以在格子里点两下选起止时间。</p>
     <div style="max-width: 260px"><label for="date">预约日期</label><select id="date"></select></div>
     <div style="margin-top: 14px" id="slots"></div>
     <button class="link" id="addSlot">＋ 添加备选时段</button>
     <div id="timeline">
-      <div id="tl"></div>
+      <div id="tl" class="num"></div>
       <div class="legend"><span><i style="background:var(--free);border-color:var(--free-line)"></i>可约</span><span><i style="background:var(--taken);border-color:var(--taken)"></i>已被预约</span><span><i style="background:var(--mine);border-color:var(--mine)"></i>我的预约</span><span><i style="background:var(--accent-soft);outline:2px solid var(--accent);outline-offset:-2px"></i>已选</span></div>
     </div>
     <div class="row">
@@ -125,31 +220,36 @@ dialog .note { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
     </div>
   </section>
 
-  <section class="card" id="progress">
-    <h2 id="progTitle"></h2>
-    <pre id="logs"></pre>
-    <div id="result"></div>
+  <section class="card fold-card" id="acctSec">
+    <details class="fold" id="acctBox">
+      <summary><h2>账号与 VPN</h2><span class="badge" id="acctBadge"></span></summary>
+      <div class="fold-body">
+        <p class="hint" style="margin-top: 0">北大统一认证的学号和密码（IAAA 和 VPN 共用）、VPN 证书验证用的身份证后 6 位、VPN 有时要求补全的手机号（填完整号码）。只保存在本机钥匙串里。
+          在校园网直接访问；不在校园网时自动连北大 VPN，只给预约程序用，不影响其它网络。</p>
+        <div class="grid2">
+          <div><label for="user">学号</label><input id="user" autocomplete="off" inputmode="numeric" class="num"></div>
+          <div><label for="pwd">密码</label><input id="pwd" type="password" autocomplete="new-password"></div>
+          <div><label for="id6">身份证后 6 位</label><input id="id6" type="password" maxlength="6" autocomplete="off"></div>
+          <div><label for="phone">手机号</label><input id="phone" type="password" maxlength="13" autocomplete="off" inputmode="numeric"></div>
+        </div>
+        <div class="row">
+          <button class="primary" id="saveCred">保存</button>
+          <button id="testNet">测试连接</button>
+        </div>
+        <div class="otp-row">
+          <div><label for="otp">手机令牌</label><input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位数字" class="num"></div>
+          <button id="otpLogin">用手机令牌登录</button>
+        </div>
+        <p class="hint" style="margin-bottom: 0">北大统一认证对没验证过的设备会要求手机令牌。在这里输一次，程序会勾选「同设备登录免二次验证」，之后自动预约就不用再输。</p>
+      </div>
+    </details>
   </section>
 
-  <section class="card">
-    <h2><span class="step">3</span>每周自动预约 <span class="badge" id="schedBadge"></span></h2>
-    <p class="hint">新的一天在开放时间放出（今天 + 13 天）。下面每条规则都会约：每条在它那天开放的晚上各运行一次
-      （如周三的规则 → 周四晚），提前几分钟联网、登录、打开预约页，到点立刻提交；开始和结果都会弹系统通知。</p>
-    <div class="grid3">
-      <div><label for="openAt">网站开放时间</label><input id="openAt" type="time"></div>
-      <div><label for="prep">提前准备（分钟）</label><input id="prep" type="number" min="1" max="30"></div>
-    </div>
-    <div style="margin-top: 14px" id="rules"></div>
-    <button class="link" id="addRule">＋ 添加规则</button>
-    <div class="plan" id="plan"></div>
-    <div class="row">
-      <button class="primary" id="schedOn">保存并开启</button>
-      <button id="schedOff">停用</button>
-      <button id="autoTest">按当前规则试运行一次（不提交）</button>
-    </div>
-    <div id="lastAuto"></div>
-    <p class="hint" style="margin: 14px 0 0" id="pmsetHint"></p>
-  </section>
+  <div class="progress" id="progress" aria-live="polite">
+    <h3 id="progTitle"></h3>
+    <pre id="logs"></pre>
+    <div id="result"></div>
+  </div>
 </main>
 
 <dialog id="confirm">
@@ -161,7 +261,7 @@ dialog .note { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
     <button class="primary" id="okBtn">确认预约</button>
   </div>
 </dialog>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status"></div>
 
 <script>
 const TOKEN = "__TOKEN__";
@@ -169,7 +269,7 @@ const $ = (id) => document.getElementById(id);
 const WEEK = "日一二三四五六";
 const WD = ["", "一", "二", "三", "四", "五", "六", "日"];  // weekday 1-7
 const TIMES = Array.from({ length: 49 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`);
-let S = null, lastJobId = 0, polling = null, grid = null, pick = null;
+let S = null, polling = null, grid = null, pick = null;
 
 async function api(path, body) {
   const r = await fetch(path, { method: body ? "POST" : "GET", headers: { "X-Token": TOKEN, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
@@ -186,10 +286,10 @@ function slotRow(container, value, removable, weekday, partial) {
   const div = document.createElement("div");
   div.className = "slot" + (weekday ? " rule" : "");
   const opts = (from, to, sel) => TIMES.slice(from, to).map((t) => `<option ${t === sel ? "selected" : ""}>${t}</option>`).join("");
-  const wsel = weekday ? `<select class="w">${[1, 2, 3, 4, 5, 6, 7].map((w) => `<option value="${w}" ${w === weekday ? "selected" : ""}>每周${WD[w]}</option>`).join("")}</select>` : "";
+  const wsel = weekday ? `<select class="w" aria-label="星期">${[1, 2, 3, 4, 5, 6, 7].map((w) => `<option value="${w}" ${w === weekday ? "selected" : ""}>每周${WD[w]}</option>`).join("")}</select>` : "";
   const pbox = weekday ? `<label class="p-wrap" title="这段时间有部分被占时，把剩下空着的都约上"><input type="checkbox" class="p" ${partial ? "checked" : ""}>有空就约</label>` : "";
-  div.innerHTML = `<span class="tag"></span>${wsel}<select class="s">${opts(0, 48, a)}</select><span>至</span><select class="e">${opts(1, 49, b)}</select>${pbox}` +
-    (removable ? `<button class="x" title="删除">✕</button>` : "<span></span>");
+  div.innerHTML = `<span class="tag"></span>${wsel}<select class="s" aria-label="开始">${opts(0, 48, a)}</select><span class="to">至</span><select class="e" aria-label="结束">${opts(1, 49, b)}</select>${pbox}` +
+    (removable ? `<button class="x" title="删除" aria-label="删除">✕</button>` : "");
   if (removable) div.querySelector(".x").onclick = () => { div.remove(); relabel(container); renderPlan(); };
   div.querySelectorAll("select, input.p").forEach((s) => (s.onchange = () => { paintSel(); renderPlan(); }));
   container.appendChild(div);
@@ -247,10 +347,18 @@ function paintSel() {
 }
 
 // ---------- 任务与进度 ----------
-function setBusy(b) { ["saveCred", "testNet", "check", "go", "schedOn", "schedOff", "autoTest"].forEach((id) => ($(id).disabled = b)); }
+// 进度框放在发起它的那一块里：测试连接 → 账号，查看空闲/预约 → 手动预约，试运行 → 规则
+const JOB_HOME = { network: () => $("acctBox").querySelector(".fold-body"), otp: () => $("acctBox").querySelector(".fold-body"), check: () => $("bookSec"), book: () => $("bookSec"), auto: () => $("ruleBox").querySelector(".fold-body") };
+function setBusy(b) { ["saveCred", "testNet", "otpLogin", "check", "go", "schedOn", "schedOff", "autoTest"].forEach((id) => ($(id).disabled = b)); }
 function showJob(j) {
   if (!j.id) return;
-  const titles = { network: "测试连接", check: "查看空闲", book: "预约", auto: "每周自动预约试运行" };
+  const titles = { otp: "手机令牌登录", network: "测试连接", check: "查看空闲", book: "预约", auto: "自动预约试运行" };
+  const home = JOB_HOME[j.kind] && JOB_HOME[j.kind]();
+  if (home && $("progress").parentNode !== home) {
+    if (j.kind === "auto") home.insertBefore($("progress"), home.firstChild); else home.appendChild($("progress"));
+    if (j.kind === "network" || j.kind === "otp") $("acctBox").open = true;
+    if (j.kind === "auto") $("ruleBox").open = true;
+  }
   $("progress").style.display = "block";
   $("progTitle").innerHTML = (j.running ? '<span class="spin"></span> ' : "") + (titles[j.kind] || "") + (j.running ? "进行中…" : "");
   $("logs").textContent = j.logs.join("\n");
@@ -266,15 +374,16 @@ function showJob(j) {
 async function poll() {
   S = await api("/api/state");
   showJob(S.job);
+  renderAlerts();
   if (!S.job.running) { clearInterval(polling); polling = null; if (S.job.kind === "book" && S.job.ok && grid) startJob("/api/check", { date: $("date").value }, true); }
 }
 async function startJob(path, body, quiet) {
   let r;
   try { r = await api(path, body); } catch (e) { return toast(e.message); }
   if (!r.started) return toast("还有任务在进行，请稍候");
-  if (!quiet) $("progress").scrollIntoView({ behavior: "smooth", block: "nearest" });
   if (!polling) polling = setInterval(poll, 800);
-  poll();
+  await poll();
+  if (!quiet) $("progress").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 // ---------- 初始化 ----------
@@ -284,19 +393,16 @@ async function init() {
   $("pwd").placeholder = S.account ? "已保存，留空则不修改" : "统一认证密码";
   $("id6").placeholder = S.id6_saved ? "已保存，留空则不修改" : "VPN 证书验证用";
   $("phone").placeholder = S.phone_saved ? "已保存，留空则不修改" : "VPN 补充验证用";
-  const done = S.account && S.id6_saved && S.phone_saved;
-  $("acctBadge").textContent = done ? "已设置" : "未完成";
-  $("acctBadge").className = "badge" + (done ? " on" : "");
+  renderAlerts();
   $("schedBadge").textContent = S.schedule_installed ? `已开启 · ${S.schedule}` : "未开启";
-  $("schedBadge").className = "badge" + (S.schedule_installed ? " on" : "");
+  $("schedBadge").className = "badge" + (S.schedule_installed ? " on" : " warn");
 
-  const t = S.today, base = new Date(+t.slice(0, 4), +t.slice(4, 6) - 1, +t.slice(6));
+  const t = S.today, base = new Date(+t.slice(0, 4), +t.slice(4, 6) - 1, +t.slice(6)), keep = $("date").value;
   $("date").innerHTML = Array.from({ length: 14 }, (_, i) => {
-    const d = new Date(base); d.setDate(d.getDate() + i);
-    const v = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    const v = ymd(addDays(base, i));
     return `<option value="${v}">${fmtDate(v)}${i === 0 ? "（今天）" : i === 13 ? "（最新开放）" : ""}</option>`;
   }).join("");
-  $("date").value = $("date").options[13].value;
+  $("date").value = [...$("date").options].some((o) => o.value === keep) ? keep : $("date").options[13].value;
   $("date").onchange = () => { grid = null; $("timeline").style.display = "none"; };
   if (!$("slots").children.length) slotRow($("slots"), "09:00-12:00", false);
 
@@ -310,12 +416,27 @@ async function init() {
   renderPlan();
   const L = S.last_auto;
   $("lastAuto").innerHTML = L && !L.dry_run
-    ? `<div class="result ${L.ok ? "ok" : "bad"}">上次自动预约（${L.time}）：${L.skipped ? "⏭" : L.ok ? "✅" : "❌"} ${L.message}</div>` : "";
+    ? `<div class="result ${L.skipped ? "skip" : L.ok ? "ok" : "bad"}">上次（${L.time.slice(5)}）：${L.skipped ? "⏭" : L.ok ? "✅" : "❌"} ${L.message}</div>` : "";
   if (S.auto_running) toast("每周自动预约正在进行，请等它结束再操作");
   showJob(S.job);
   if (S.job.running && !polling) polling = setInterval(poll, 800);
 }
 
+function renderAlerts() {  // 账号状态、是否需要手机令牌
+  const done = S.account && S.id6_saved && S.phone_saved;
+  $("acctBadge").textContent = !done ? "未完成，请先填写" : S.need_otp ? "需要手机令牌" : `已设置 · ${S.account}`;
+  $("acctBadge").className = "badge" + (done && !S.need_otp ? " on" : " warn");
+  if (!done || S.need_otp) $("acctBox").open = true;
+  $("otpAlert").hidden = !S.need_otp;
+}
+$("otpGo").onclick = () => { $("acctBox").open = true; $("otp").scrollIntoView({ behavior: "smooth", block: "center" }); $("otp").focus(); };
+$("otpLogin").onclick = () => {
+  const code = $("otp").value.replace(/\s/g, "");
+  if (!/^\d{6}$/.test(code)) return toast("手机令牌是 6 位数字");
+  $("otp").value = "";
+  startJob("/api/otp_login", { code });
+};
+$("otp").onkeydown = (e) => { if (e.key === "Enter") $("otpLogin").click(); };
 $("addSlot").onclick = () => slotRow($("slots"), null, true);
 $("saveCred").onclick = async () => {
   const body = { user: $("user").value.trim(), password: $("pwd").value, id6: $("id6").value.trim(), phone: $("phone").value.trim() };
@@ -331,19 +452,26 @@ $("go").onclick = () => {
   const slots = readSlots($("slots"));
   if (!validSlots(slots)) return;
   const dry = $("dry").checked;
-  $("confirmBody").innerHTML = `<dt>日期</dt><dd>${fmtDate($("date").value)}</dd>` + slots.map((s, i) => `<dt>${i ? "备选 " + i : "首选"}</dt><dd>${s}</dd>`).join("");
+  $("confirmBody").innerHTML = `<dt>日期</dt><dd>${fmtDate($("date").value)}</dd>` + slots.map((s, i) => `<dt>${i ? "备选 " + i : "首选"}</dt><dd class="num">${s}</dd>`).join("");
   $("confirmNote").textContent = (slots.length > 1 ? "首选被占时按顺序尝试，约到一个就停。" : "如果这个时段已被占用，不会提交。") + (dry ? "（试运行：只走流程，不会真的提交）" : "");
   $("okBtn").textContent = dry ? "开始试运行" : "确认预约";
   $("confirm").showModal();
 };
 $("cancelBtn").onclick = () => $("confirm").close();
 $("okBtn").onclick = () => { $("confirm").close(); startJob("/api/book", { date: $("date").value, slots: readSlots($("slots")), dry_run: $("dry").checked }); };
+
+// ---------- 自动预约：接下来两周 ----------
 function readRules() {
   return [...$("rules").children].map((d) => ({ weekday: +d.querySelector(".w").value, slot: `${d.querySelector(".s").value}-${d.querySelector(".e").value}`, partial: d.querySelector(".p").checked }));
 }
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function md(d) { return `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, "0")} 周${WEEK[d.getDay()]}`; }
 function isoWd(d) { return d.getDay() || 7; }
+function ymd(d) { return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`; }
+function isDirty() {  // 界面里的规则 / 时间和已保存的不一样
+  const norm = (rs) => JSON.stringify(rs.map((r) => [+r.weekday, r.slot, !!r.partial]));
+  return norm(readRules()) !== norm(S.config.rules) || $("openAt").value !== S.config.open_at || +$("prep").value !== +S.config.prepare_minutes;
+}
 function renderPlan() {  // 和 common.run_schedule / book.weekly_plan 同样的算法
   if (!S || !$("rules").children.length) return;
   const rules = readRules(), ahead = S.config.days_ahead;
@@ -358,18 +486,34 @@ function renderPlan() {  // 和 common.run_schedule / book.weekly_plan 同样的
     const openWd = (((r.weekday - 1 - ahead) % 7) + 7) % 7 + 1;
     let run = today; while (isoWd(run) !== openWd || (run.getTime() === today.getTime() && passed)) run = addDays(run, 1);
     for (let k = 0; k < 2; k++, run = addDays(run, 7)) {  // 列出接下来两周，每次都可以单独取消
-      const target = addDays(run, ahead), d = ymd(target), off = skip.has(d);
-      items.push({ run, html: `<li class="${off ? "off" : ""}"><span><span class="what"><b>${md(target)} ${r.slot}</b>${r.partial ? "（有空就约）" : "（整段都空才约）"} ← ${md(run)} ${fmt(t)} 运行</span>${off ? '<span class="off-tag">已取消</span>' : ""}</span>` +
-        `<button class="link skip" data-date="${d}" data-skip="${off ? 0 : 1}">${off ? "恢复" : "取消这次"}</button></li>` });
+      const target = addDays(run, ahead);
+      items.push({ run, target, d: ymd(target), r, off: skip.has(ymd(target)) });
     }
   });
-  items.sort((a, b) => a.run - b.run);
+  items.sort((a, b) => a.run - b.run || a.r.slot.localeCompare(b.r.slot));
+  const runDay = md;  // 00:05 运行，「今晚 / 明晚」容易看岔，直接写日期
+  const mode = (r) => r.partial ? "有空就约" : "整段都空才约";
+  const next = items.find((x) => !x.off);
+
+  // 最上面：下一次
+  if (!S.schedule_installed) $("next").innerHTML = `<div class="next-none">自动预约还没开启。设好规则后点「保存并开启」，下面是开启后会运行的时间。</div>`;
+  else if (!next) $("next").innerHTML = `<div class="next-none">接下来两周都取消了。</div>`;
+  else $("next").innerHTML = `<div class="next-when num">${runDay(next.run)} ${fmt(t)}</div>` +
+    `<div class="next-what num">约 <b>${md(next.target)} ${next.r.slot}</b>（${mode(next.r)}）</div>`;
+
+  $("runs").innerHTML = items.map((x) => `<li class="${x.off ? "off" : x === next && S.schedule_installed ? "is-next" : ""}">` +
+    `<span class="when"><b>${runDay(x.run)}</b>${fmt(t)} 运行</span>` +
+    `<span class="what"><b>${md(x.target)} ${x.r.slot}</b><small>${mode(x.r)}</small>${x.off ? '<span class="off-tag">已取消</span>' : ""}</span>` +
+    `<button class="link skip" data-date="${x.d}" data-skip="${x.off ? 0 : 1}">${x.off ? "恢复" : "取消这次"}</button></li>`).join("");
+
   const days = [...new Set(rules.map((r) => WD[(((r.weekday - 1 - ahead) % 7) + 7) % 7 + 1]))].join("、");
-  $("plan").innerHTML = `每<b>周${days} ${fmt(t)}</b> 开始准备，<b>${pollFrom}</b> 起每 3 秒刷新，新的一天一出现（预计 ${$("openAt").value}）立即提交，确认约到就结束（没开放最多等到 ${pollTo}）。每条规则都约。` +
-    `接下来两周（已经约到了、某次不想约，点「取消这次」，只跳过那一次，规则不变，立即生效）：<ol class="runs">${items.map((x) => x.html).join("")}</ol>`;
+  $("ruleSum").textContent = `每周${days} ${fmt(t)} 运行 · ${rules.length} 条规则`;
+  $("plan").innerHTML = `每<b>周${days} ${fmt(t)}</b> 开始准备，<b>${pollFrom}</b> 起每 3 秒刷新，新的一天一出现（预计 ${$("openAt").value}）立即提交，确认约到就结束（没开放最多等到 ${pollTo}）。`;
+  const dirty = isDirty();
+  $("dirty").textContent = dirty ? "改动还没保存，上面的时间是按改动后预览的" : "";
+  $("ruleBox").querySelector("summary").classList.toggle("dirty", dirty);
 }
-function ymd(d) { return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`; }
-$("plan").onclick = async (e) => {
+$("runs").onclick = async (e) => {
   const b = e.target.closest("button.skip"); if (!b) return;
   const date = b.dataset.date, skip = b.dataset.skip === "1";
   try {

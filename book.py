@@ -18,14 +18,25 @@ import urllib.parse
 from playwright.sync_api import Page, sync_playwright
 
 import vpn
-from common import LOG_DIR, WEEKDAYS, Stop, credentials, load_config, log, notify, set_skip, skip_dates
+from common import LOG_DIR, ROOT, WEEKDAYS, Stop, credentials, load_config, log, notify, set_skip, skip_dates
 
 BASE = "https://mpac.pku.edu.cn"
 AUTO_LOCK = LOG_DIR / "auto.lock"
+# 程序自己的 Chrome 资料夹：保留 IAAA 的「同设备登录免二次验证」和 mpac 的登录，不会每次都被当成新设备
+PROFILE = ROOT / "profile"
+# IAAA 要求手机令牌时留下这个标记，界面据此提醒；用令牌登录成功后删掉
+NEED_OTP = LOG_DIR / "need_otp"
+OTP_HELP = "打开预约界面，在「账号与 VPN」里输入手机令牌登录一次（会勾选「同设备登录免二次验证」），之后自动预约就不用再输令牌"
 
 
 class Skipped(Stop):
     """这次要约的日子都被手动取消了（skip_dates），不是失败。"""
+
+
+class NeedVerify(Stop):
+    """IAAA 要求手机令牌 / 短信 / 图片验证码：要人来处理，重试也没用。"""
+
+
 IAAA_URL = (
     "https://iaaa.pku.edu.cn/iaaa/oauth.jsp?appID=mpac"
     "&appName=%e5%8c%97%e4%ba%ac%e5%a4%a7%e5%ad%a6%e6%9d%90%e6%96%99%e5%8a%a0%e5%b7%a5%e4%b8%8e%e6%b5%8b%e8%af%95%e4%b8%ad%e5%bf%83"
@@ -79,12 +90,39 @@ def logged_in_name(page: Page) -> str | None:
     return m.group(1) if m else None
 
 
-def login(page: Page) -> None:
+def need_verify(what: str) -> NeedVerify:
+    NEED_OTP.parent.mkdir(exist_ok=True)
+    NEED_OTP.write_text(what)
+    if what == "手机令牌":
+        return NeedVerify(f"IAAA 要求输入手机令牌，无法自动登录。{OTP_HELP}")
+    return NeedVerify(f"IAAA 要求输入{what}，无法自动登录，请在浏览器里手动登录一次后再试")
+
+
+def login(page: Page, otp: str | None = None) -> None:
+    """IAAA 登录。otp：手机令牌（6 位数字），给了就填上并勾选「同设备登录免二次验证」。"""
     user, pwd = credentials()
-    log(f"登录 IAAA：{user}")
+    log(f"登录 IAAA：{user}" + ("（使用手机令牌）" if otp else ""))
     page.goto(IAAA_URL, wait_until="networkidle")
-    page.fill("#user_name", user)
+    # 填完学号，网站会问 isMobileAuthen.do：这台设备要不要二次验证、用哪种（OTP=手机令牌，SMS=短信）
+    mode = None
+    try:
+        with page.expect_response(lambda r: "isMobileAuthen.do" in r.url, timeout=15_000) as info:
+            page.fill("#user_name", user)
+            page.locator("#user_name").dispatch_event("change")
+        data = info.value.json()
+        if data.get("isMobileAuthen"):
+            mode = data.get("authenMode") or "二次验证"
+    except Exception:
+        pass  # 没问到就照常提交，失败了再看页面上要什么
     page.fill("#password", pwd)
+    if mode == "OTP":
+        if not otp:
+            raise need_verify("手机令牌")
+        page.fill("#otp_code", otp)
+        page.evaluate("""() => { const c = document.querySelector('#remTrust_check');
+          if (c && !c.checked) { if (window.clickTrustCheck) clickTrustCheck(); c.checked = true; } }""")
+    elif mode:
+        raise need_verify("短信验证码" if mode == "SMS" else f"二次验证（{mode}）")
     page.click("#logon_button")
     try:
         page.wait_for_url(re.compile(r"^https://mpac\.pku\.edu\.cn/"), timeout=20_000)
@@ -92,10 +130,12 @@ def login(page: Page) -> None:
         return
     except Exception:
         pass
+    msg = page.locator("#msg").inner_text().strip() if page.locator("#msg").count() else ""
+    if otp and page.locator("#otp_area").is_visible():
+        raise Stop(f"手机令牌登录失败：{msg or '未跳转回 mpac'}（令牌可能过期了，换一个新的再试）")
     for area, what in (("#sms_area", "短信验证码"), ("#otp_area", "手机令牌"), ("#code_area", "图片验证码")):
         if page.locator(area).is_visible():
-            raise Stop(f"IAAA 要求输入{what}，无法自动登录，请手动登录一次后再试")
-    msg = page.locator("#msg").inner_text().strip() if page.locator("#msg").count() else ""
+            raise need_verify(what)
     raise Stop(f"IAAA 登录失败：{msg or '未跳转回 mpac'}")
 
 
@@ -153,8 +193,9 @@ def submit(page: Page, date: str, slot: str, dry_run: bool) -> str:
 class Session:
     """with Session() as s: 联网 → 开 Chrome → 登录 → 打开上机预约页。退出时关浏览器、断开自己开的 VPN。"""
 
-    def __init__(self, pid: int | None = None):
+    def __init__(self, pid: int | None = None, otp: str | None = None):
         self.pid = pid or load_config()["instrument_pid"]
+        self.otp = otp  # 给了手机令牌：一定走一遍 IAAA 登录，并勾选「同设备登录免二次验证」
 
     def __enter__(self) -> "Session":
         if getattr(self, "me", None):  # 已经打开过（自动预约先打开、后用 with 收尾）
@@ -162,18 +203,31 @@ class Session:
         self.vpn = vpn.ensure()
         self._pw = sync_playwright().start()
         args = [f"--proxy-server={self.vpn.proxy}"] if self.vpn.proxy else ["--no-proxy-server"]
-        self.browser = self._pw.chromium.launch(channel="chrome", headless=True, args=args)
-        self.page = self.browser.new_context(locale="zh-CN").new_page()
+        PROFILE.mkdir(exist_ok=True)
         try:
-            self.page.goto(booking_url(self.pid), wait_until="networkidle")
-            if not logged_in_name(self.page):
-                login(self.page)
-                self.reload()
+            # 用固定的资料夹（不是每次一个空浏览器）：IAAA 记得这台设备已验证过，mpac 的登录也能接着用
+            self.browser = self._pw.chromium.launch_persistent_context(
+                str(PROFILE), channel="chrome", headless=True, args=args, locale="zh-CN")
+        except Exception:
+            self._pw.stop()
+            self.vpn.stop()
+            raise
+        self.page = self.browser.pages[0] if self.browser.pages else self.browser.new_page()
+        try:
+            if self.otp:
+                login(self.page, self.otp)
+                self.page.goto(booking_url(self.pid), wait_until="networkidle")
+            else:
+                self.page.goto(booking_url(self.pid), wait_until="networkidle")
+                if not logged_in_name(self.page):
+                    login(self.page)
+                    self.reload()
             self.me = logged_in_name(self.page)
             if not self.me:
                 raise Stop("登录后仍然不是登录状态，请手动检查网站")
             if self.page.locator("select[name='预约日期']").count() == 0:
                 raise Stop(f"上机预约页面没有快速预约表单（pid={self.pid} 是否有预约权限？）")
+            NEED_OTP.unlink(missing_ok=True)
             log(f"已登录：{self.me}")
         except BaseException:
             self.__exit__(*sys.exc_info())
@@ -300,6 +354,8 @@ def open_session_with_retry(pid: int, give_up_at: dt.datetime) -> "Session":
     while True:
         try:
             return Session(pid).__enter__()
+        except NeedVerify:
+            raise  # 要手机令牌 / 验证码：重试没用，马上通知你
         except Exception as e:
             if dt.datetime.now() >= give_up_at:
                 raise
@@ -422,6 +478,10 @@ def main() -> int:
         log(f"⏭ {e}")
         msg, code, skipped = str(e), 0, True
         notify("⏭ mpac 自动预约已跳过", msg)
+    except NeedVerify as e:
+        log(f"❌ {e}")
+        msg, code = str(e), 1
+        notify("🔑 mpac 需要手机令牌", msg)
     except Stop as e:
         log(f"❌ {e}")
         msg, code = str(e), 1

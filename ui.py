@@ -6,6 +6,7 @@
 import datetime as dt
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -99,6 +100,12 @@ def task_book(date: str, slots: list[str], dry_run: bool):
     return msg
 
 
+def task_otp_login(code: str):
+    """用手机令牌登录一次，并勾选「同设备登录免二次验证」，之后自动预约不用再输令牌。"""
+    with book.Session(otp=code) as s:
+        return f"已用手机令牌登录（{s.me}），并记住了这台电脑。之后自动预约不用再输入令牌"
+
+
 def task_auto_test():
     try:
         return book.auto(dry_run=True)
@@ -119,6 +126,7 @@ def state() -> dict:
         "config": {**{k: cfg.get(k) for k in ("open_at", "prepare_minutes", "poll_before_minutes", "wait_max_minutes", "days_ahead", "rules")},
                    "skip_dates": skip_dates(cfg)},
         "auto_running": auto_running(),
+        "need_otp": book.NEED_OTP.exists(),
         "schedule": scheduler.describe(),
         "pmset": scheduler.pmset_command(),
         "schedule_installed": scheduler.PLIST.exists(),
@@ -205,6 +213,11 @@ class Handler(BaseHTTPRequestHandler):
                 save_config(cfg)
                 scheduler.install() if body.get("enabled") else scheduler.uninstall()
                 return self.send(200, {"ok": True})
+            if self.path == "/api/otp_login":
+                code = str(body.get("code", "")).strip()
+                if not re.fullmatch(r"\d{6}", code):
+                    raise ValueError("手机令牌是 6 位数字")
+                return self.send(200, {"started": start_job("otp", lambda: task_otp_login(code))})
             if self.path == "/api/skip":
                 # 取消 / 恢复某一天的自动预约（只改 skip_dates，规则和定时任务不变）
                 if auto_running():
