@@ -166,6 +166,31 @@ dialog .note { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
     <span class="sub">扫描电子显微镜 · 北京大学材料加工与测试中心</span>
   </header>
 
+  <section class="card fold-card" id="acctSec">
+    <details class="fold" id="acctBox">
+      <summary><h2>账号与 VPN</h2><span class="badge" id="acctBadge"></span></summary>
+      <div class="fold-body">
+        <p class="hint" style="margin-top: 0">北大统一认证的学号和密码（IAAA 和 VPN 共用）、VPN 证书验证用的身份证后 6 位、VPN 有时要求补全的手机号（填完整号码）。只保存在本机钥匙串里。
+          在校园网直接访问；不在校园网时自动连北大 VPN，只给预约程序用，不影响其它网络。</p>
+        <div class="grid2">
+          <div><label for="user">学号</label><input id="user" autocomplete="off" inputmode="numeric" class="num"></div>
+          <div><label for="pwd">密码</label><input id="pwd" type="password" autocomplete="new-password"></div>
+          <div><label for="id6">身份证后 6 位</label><input id="id6" type="password" maxlength="6" autocomplete="off"></div>
+          <div><label for="phone">手机号</label><input id="phone" type="password" maxlength="13" autocomplete="off" inputmode="numeric"></div>
+        </div>
+        <div class="row">
+          <button class="primary" id="saveCred">保存</button>
+          <button id="testNet">测试连接</button>
+        </div>
+        <div class="otp-row">
+          <div><label for="otp">手机令牌</label><input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位数字" class="num"></div>
+          <button id="otpLogin">用手机令牌登录</button>
+        </div>
+        <p class="hint" style="margin-bottom: 0">北大统一认证对没验证过的设备会要求手机令牌。在这里输一次，程序会勾选「同设备登录免二次验证」，之后自动预约就不用再输。</p>
+      </div>
+    </details>
+  </section>
+
   <section class="card hero" id="autoSec" aria-labelledby="autoTitle">
     <div class="alert" id="otpAlert" role="alert" hidden>
       <span><b>需要手机令牌</b>：北大统一认证要求二次验证，自动预约现在登录不了。</span>
@@ -220,30 +245,6 @@ dialog .note { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
     </div>
   </section>
 
-  <section class="card fold-card" id="acctSec">
-    <details class="fold" id="acctBox">
-      <summary><h2>账号与 VPN</h2><span class="badge" id="acctBadge"></span></summary>
-      <div class="fold-body">
-        <p class="hint" style="margin-top: 0">北大统一认证的学号和密码（IAAA 和 VPN 共用）、VPN 证书验证用的身份证后 6 位、VPN 有时要求补全的手机号（填完整号码）。只保存在本机钥匙串里。
-          在校园网直接访问；不在校园网时自动连北大 VPN，只给预约程序用，不影响其它网络。</p>
-        <div class="grid2">
-          <div><label for="user">学号</label><input id="user" autocomplete="off" inputmode="numeric" class="num"></div>
-          <div><label for="pwd">密码</label><input id="pwd" type="password" autocomplete="new-password"></div>
-          <div><label for="id6">身份证后 6 位</label><input id="id6" type="password" maxlength="6" autocomplete="off"></div>
-          <div><label for="phone">手机号</label><input id="phone" type="password" maxlength="13" autocomplete="off" inputmode="numeric"></div>
-        </div>
-        <div class="row">
-          <button class="primary" id="saveCred">保存</button>
-          <button id="testNet">测试连接</button>
-        </div>
-        <div class="otp-row">
-          <div><label for="otp">手机令牌</label><input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位数字" class="num"></div>
-          <button id="otpLogin">用手机令牌登录</button>
-        </div>
-        <p class="hint" style="margin-bottom: 0">北大统一认证对没验证过的设备会要求手机令牌。在这里输一次，程序会勾选「同设备登录免二次验证」，之后自动预约就不用再输。</p>
-      </div>
-    </details>
-  </section>
 
   <div class="progress" id="progress" aria-live="polite">
     <h3 id="progTitle"></h3>
