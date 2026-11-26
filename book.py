@@ -404,6 +404,10 @@ def auto(dry_run: bool = False) -> str:
 
 def _auto_run(cfg, plan, open_time, poll_from, poll_until, dry_run) -> str:
     s = open_session_with_retry(cfg["instrument_pid"], give_up_at=open_time + dt.timedelta(minutes=2))
+    if not dry_run:
+        # 第二条提醒：联网、登录都好了，只等开放
+        net = "北大 VPN 已连接" if s.vpn.proxy else "校园网直连"
+        notify("🔗 mpac 已联网并登录", f"{net}，已登录（{s.me}），{cfg['open_at']} 开放后立即预约")
     with s:  # 结束时关浏览器、断开 VPN（出错会截图）
         # 这个时段里已经有你的预约（比如之前跑过、或你手动约过）就跳过，不重复约
         open_dates, todo, done = s.dates(), [], []
