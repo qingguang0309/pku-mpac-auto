@@ -5,12 +5,14 @@
   uv run python book.py --dry-run    # 同上，但不点「提交预约」
   uv run python book.py --date 20261120 --slot 14:00-17:00 --slot 09:00-12:00   # 指定日期和时段（按顺序尝试）
   uv run python book.py --skip 20261210      # 取消 12-10 那天的自动预约（规则不变）；--unskip 恢复
+  uv run python book.py --remind     # 晚上提醒：今晚要自动预约，请插电、别合盖（定时任务在运行前 3 小时跑）
 """
 import argparse
 import datetime as dt
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -18,7 +20,8 @@ import urllib.parse
 from playwright.sync_api import Page, sync_playwright
 
 import vpn
-from common import LOG_DIR, ROOT, WEEKDAYS, Stop, credentials, load_config, log, notify, set_skip, skip_dates
+from common import (LOG_DIR, ROOT, WEEKDAYS, Stop, credentials, load_config, log, notify, run_schedule, set_skip,
+                    skip_dates)
 
 BASE = "https://mpac.pku.edu.cn"
 AUTO_LOCK = LOG_DIR / "auto.lock"
@@ -26,6 +29,8 @@ AUTO_LOCK = LOG_DIR / "auto.lock"
 PROFILE = ROOT / "profile"
 # IAAA 要求手机令牌时留下这个标记，界面据此提醒；用令牌登录成功后删掉
 NEED_OTP = LOG_DIR / "need_otp"
+# 合盖、用电池时 Mac 会强制睡眠，程序挡不住；只能提前提醒
+AWAKE_HELP = "要自动预约的那晚请插上电源、不要合盖"
 OTP_HELP = "打开预约界面，在「账号与 VPN」里输入手机令牌登录一次（会勾选「同设备登录免二次验证」），之后自动预约就不用再输令牌"
 
 
@@ -391,15 +396,62 @@ def auto(dry_run: bool = False) -> str:
 
     oh, om = (int(x) for x in cfg["open_at"].split(":"))
     open_time = dt.datetime.combine(today, dt.time(oh, om))
+    planned = open_time - dt.timedelta(minutes=int(cfg["prepare_minutes"]))
+    late = (dt.datetime.now() - planned).total_seconds() / 60
+    if not dry_run and late > 3:
+        log(f"启动晚了 {int(late)} 分钟（计划 {planned:%H:%M}），Mac 之前可能在睡眠")
     poll_from = open_time - dt.timedelta(minutes=cfg.get("poll_before_minutes", 0))
     poll_until = open_time + dt.timedelta(minutes=cfg["wait_max_minutes"])
     LOG_DIR.mkdir(exist_ok=True)
     AUTO_LOCK.write_text(str(os.getpid()))  # 界面看到它就不去登录，免得把这里的登录挤掉
+    # 跑的这十几分钟里别让 Mac 闲置睡着（合盖用电池时 macOS 仍会强制睡眠，这个挡不住）
+    awake = subprocess.Popen(["caffeinate", "-ims", "-w", str(os.getpid())]) if not dry_run else None
     try:
         msg = _auto_run(cfg, plan, open_time, poll_from, poll_until, dry_run)
         return msg + (f"。已按设置跳过：{skipped}" if skipped else "")
+    except NeedVerify:
+        raise
+    except vpn.Offline as e:
+        raise Stop(f"{e}。{AWAKE_HELP}")
+    except Stop as e:
+        if not dry_run and 3 < late < 180:
+            raise Stop(f"{e}。本次 {planned + dt.timedelta(minutes=late):%H:%M} 才启动（计划 {planned:%H:%M}），"
+                       f"Mac 当时多半在睡眠：{AWAKE_HELP}")
+        raise
     finally:
         AUTO_LOCK.unlink(missing_ok=True)
+        if awake:
+            awake.terminate()
+
+
+def on_battery() -> bool:
+    r = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True)
+    return "Battery Power" in r.stdout
+
+
+def remind() -> None:
+    """运行前几小时提醒一下：今晚要自动预约，Mac 得醒着、有网。没有要约的（或都取消了）就不提醒。"""
+    cfg = load_config()
+    now = dt.datetime.now()
+    for wd, h, m in run_schedule(cfg):
+        run_at = dt.datetime.combine(now.date(), dt.time(h, m))
+        run_at += dt.timedelta(days=(wd - run_at.isoweekday()) % 7)
+        if dt.timedelta(0) < run_at - now <= dt.timedelta(hours=6):
+            break
+    else:
+        log("提醒：接下来 6 小时内没有自动预约")
+        return
+    skip = set(skip_dates(cfg))
+    plan = [(d, slot) for d, slot, _ in weekly_plan(cfg, run_at.date()) if d not in skip]
+    if not plan:
+        log(f"提醒：{run_at:%m-%d %H:%M} 那次要约的都已取消，不提醒")
+        return
+    desc = "、".join(pretty(d, slot) for d, slot in plan)
+    when = "今晚" if run_at.date() == now.date() or run_at.hour < 6 else f"{run_at:%m-%d}"
+    msg = (f"{when} {run_at:%H:%M} 自动预约 {desc}。请插上电源、不要合盖，否则 Mac 睡着就约不到"
+           + ("（现在用的是电池）" if on_battery() else ""))
+    log(f"提醒：{msg}")
+    notify("🔌 今晚 mpac 自动预约", msg)
 
 
 def _auto_run(cfg, plan, open_time, poll_from, poll_until, dry_run) -> str:
@@ -458,7 +510,11 @@ def main() -> int:
     ap.add_argument("--slot", action="append", help="指定时段（可重复，按优先级）")
     ap.add_argument("--skip", metavar="YYYYMMDD", action="append", help="取消这一天的自动预约（规则不变，可重复）")
     ap.add_argument("--unskip", metavar="YYYYMMDD", action="append", help="恢复这一天的自动预约（可重复）")
+    ap.add_argument("--remind", action="store_true", help="只发提醒：今晚要自动预约，请插电、别合盖")
     args = ap.parse_args()
+    if args.remind:
+        remind()
+        return 0
     if args.skip or args.unskip:
         try:
             for d in args.skip or []:

@@ -31,6 +31,32 @@ def reachable(via_vpn: bool = False, timeout: int = 6) -> bool:
     return r.stdout.strip() not in ("", "000")
 
 
+class Offline(Stop):
+    """这台 Mac 根本没联网（连 VPN 服务器的域名都解析不了），通常是在睡眠或没连 Wi-Fi。"""
+
+
+def online() -> bool:
+    try:
+        socket.getaddrinfo("vpn.pku.edu.cn", 443)
+        return True
+    except OSError:
+        return False
+
+
+def wait_online(seconds: int = 60) -> None:
+    """刚唤醒时 Wi-Fi 常要十几秒才连上：没网就每 5 秒看一次，最多等 seconds 秒。"""
+    if online():
+        return
+    log(f"网络：这台 Mac 现在没有网络，最多等 {seconds} 秒看能不能连上…")
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        time.sleep(5)
+        if online():
+            log("网络：已恢复")
+            return
+    raise Offline(f"这台 Mac 没有网络（{seconds} 秒内都没连上），多半是在睡眠（合盖、用电池）或没连 Wi-Fi")
+
+
 def port_open() -> bool:
     with socket.socket() as s:
         s.settimeout(0.5)
@@ -119,8 +145,11 @@ def authenticate() -> dict:
 
 def ensure() -> Vpn:
     """能直连就直连；否则登录 VPN 并开本地 SOCKS 代理。失败会重新判断网络、再试一次（网络可能刚切换）。"""
+    wait_online()
     try:
         return _ensure_once()
+    except Offline:
+        raise
     except Stop as e:
         log(f"网络准备失败，5 秒后重试一次：{e}")
         time.sleep(5)
@@ -128,6 +157,10 @@ def ensure() -> Vpn:
 
 
 def _ensure_once() -> Vpn:
+    if reachable():
+        log("网络：校园网直连，不需要 VPN")
+        return Vpn(None)
+    wait_online(20)  # 网络刚断：别把「没网」误报成「VPN 认证失败」
     if reachable():
         log("网络：校园网直连，不需要 VPN")
         return Vpn(None)

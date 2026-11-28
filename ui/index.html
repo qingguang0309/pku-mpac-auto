@@ -205,7 +205,7 @@ dialog .note { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
     </div>
     <div id="lastAuto"></div>
     <ol class="runs num" id="runs"></ol>
-    <p class="runs-note">已经约到了、某次不想约：点「取消这次」只跳过那一次，规则不变，立即生效。</p>
+    <p class="runs-note">已经约到了、某次不想约：点「取消这次」只跳过那一次，规则不变，立即生效。<br>🔌 要约的那晚请<b>插上电源、不要合盖</b>：合盖用电池时 Mac 会强制睡眠、断网，就约不到。运行前 3 小时（21:05）会弹通知提醒。</p>
     <details class="fold" id="ruleBox">
       <summary>规则和运行时间 <span class="sum-note" id="ruleSum"></span></summary>
       <div class="fold-body">
@@ -412,7 +412,7 @@ async function init() {
   $("rules").innerHTML = "";
   S.config.rules.forEach((r, i) => slotRow($("rules"), r.slot, i > 0, r.weekday, r.partial));
   $("pmsetHint").innerHTML = S.schedule_installed
-    ? `Mac 需要在运行前醒着。改了规则或时间后，在终端执行一次（需要管理员密码）：<code>${S.pmset}</code>`
+    ? `Mac 需要在运行前醒着（定时唤醒只在插电或开着盖子时可靠）。改了规则或时间后，在终端执行一次（需要管理员密码）：<code>${S.pmset}</code>`
     : "";
   renderPlan();
   const L = S.last_auto;
